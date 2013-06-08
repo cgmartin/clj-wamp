@@ -1,7 +1,12 @@
 (ns clj-wamp.core-test
-  (:require [clojure.test :refer :all]
-            [clj-wamp.core :refer :all]))
+  (:use clojure.test
+        clj-wamp.core))
 
-(deftest a-test
-  (testing "FIXME, I fail."
-    (is (= 0 1))))
+(deftest clj-wamp-version-test
+  (is (= "clj-wamp/0.1.0" clj-wamp-version)))
+
+(deftest next-sess-id-test
+  (is (= 1 (next-sess-id)))
+  (is (= 2 (next-sess-id))))
+
+

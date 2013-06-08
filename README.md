@@ -1,13 +1,21 @@
 # clj-wamp
 
-A Clojure library designed to ... well, that part is up to you.
+Clojure implementation of the WebSocket Application Messaging Protocol,
+for the server.
+
+*Warning: Signature still in flux, better to wait for 1.0.0 release*
+
+See the WAMP website for more information:
+http://wamp.ws/
 
 ## Usage
 
-FIXME
+```clojure
+[clj-wamp "0.1.0"]
+```
 
 ## License
 
-Copyright © 2013 FIXME
+Copyright © 2013 Christopher Martin
 
 Distributed under the Eclipse Public License, the same as Clojure.
