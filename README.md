@@ -3,7 +3,9 @@
 Clojure implementation of the WebSocket Application Messaging Protocol,
 for the server.
 
-*Warning: Signature still in flux, better to wait for 1.0.0 release*
+[![Build Status](https://travis-ci.org/cgmartin/clj-wamp.png?branch=master)](https://travis-ci.org/cgmartin/clj-wamp)
+
+*Warning: Signature in flux, better to wait for 1.0.0 release*
 
 See the WAMP website for more information:
 http://wamp.ws/
@@ -11,7 +13,7 @@ http://wamp.ws/
 ## Usage
 
 ```clojure
-[clj-wamp "0.1.0"]
+[clj-wamp "0.2.0"]
 ```
 
 ## License

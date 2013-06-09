@@ -1,4 +1,4 @@
-(ns clj-wamp.core
+(ns clj-wamp.server
   ^{:author "Christopher Martin"
     :doc "Clojure implementation of the WebSocket Application Messaging Protocol"}
   (:use [clojure.core.incubator :only [dissoc-in]]
@@ -25,12 +25,12 @@
       (rest (take 3 (read-string (slurp "project.clj")))))))
 
 
-(def max-id (atom 0))
+(def max-sess-id (atom 0))
 
 (defn next-sess-id
   "return the next (incremented) webservice session id"
   []
-  (swap! max-id inc))
+  (swap! max-sess-id inc))
 
 
 ;; Client utils
@@ -38,9 +38,11 @@
 (def clients (atom {})) ; TODO Needs load testing to find optimal ref granularity
 
 (defn add-client
-  "add a webservice session and it's corresponding event channel to a map of clients"
-  [sess-id channel]
-  (swap! clients assoc sess-id {:channel channel}))
+  "add a webservice client with it's corresponding event channel to a map of clients"
+  [channel]
+  (let [sess-id (str (System/currentTimeMillis) "-" (next-sess-id))]
+    (swap! clients assoc sess-id {:channel channel})
+    sess-id))
 
 (defn del-client
   "remove a webservice session from the map of clients"
@@ -108,7 +110,7 @@
   "send data to a websocket client"
   [sess-id & data]
   (let [channel (get-in @clients [sess-id :channel])
-        json-data (json/generate-string data)]
+        json-data (json/encode data)]
     (if (fn? channel) ; application callback?
       (channel data)
       (httpkit/send! (get-in @clients [sess-id :channel]) json-data))))
@@ -155,8 +157,7 @@
   "callback that handles cleanup of clients and topics"
   [sess-id callback]
   (fn [status]
-    (if (fn? callback)
-      (callback sess-id status))
+    (when (fn? callback) (callback sess-id status))
     (if-let [sess-topics (get-in @clients [sess-id :topics])]
       (doseq [[topic _] sess-topics]
         (topic-unsubscribe topic sess-id)))
@@ -183,11 +184,11 @@
     (on-publish sess-id topic event exclude nil))
   ([sess-id topic event exclude eligible]
     (if-not (nil? eligible)
-      (topic-emit! topic eligible TYPE-ID-EVENT event)
+      (topic-emit! topic eligible TYPE-ID-EVENT topic event)
       (let [exclude (if (= Boolean (type exclude))
                       (if (true? exclude) [sess-id] nil)
                       exclude)]
-        (topic-broadcast! topic exclude TYPE-ID-EVENT event)))))
+        (topic-broadcast! topic exclude TYPE-ID-EVENT topic event)))))
 
 (defn- on-message
   "callback that handles all http-kit messages.
@@ -195,7 +196,7 @@
   wamp callback."
   [sess-id callbacks]
   (fn [data]
-    (let [[msg-type & msg-params] (json/parse-string data) ; TODO parse error handling
+    (let [[msg-type & msg-params] (json/decode data) ; TODO parse error handling
           on-call-cbs  (callbacks :on-call)
           on-sub-cb    (callbacks :on-subscribe)
           on-unsub-cb  (callbacks :on-unsubscribe)
@@ -215,22 +216,19 @@
         (let [topic (get-topic sess-id (first msg-params))]
           (if (nil? (get-in @topics [topic sess-id]))
             (topic-subscribe topic sess-id)
-            (if (fn? on-sub-cb)
-              (on-sub-cb sess-id topic))))
+            (when (fn? on-sub-cb) (on-sub-cb sess-id topic))))
 
         6 ;TYPE-ID-UNSUBSCRIBE
         (let [topic (get-topic sess-id (first msg-params))]
           (if (true? (get-in @topics [topic sess-id]))
             (topic-unsubscribe topic sess-id)
-            (if (fn? on-unsub-cb)
-              (on-unsub-cb sess-id topic))))
+            (when (fn? on-unsub-cb) (on-unsub-cb sess-id topic))))
 
         7 ;TYPE-ID-PUBLISH
         (let [[topic-uri event & pub-args] msg-params
               topic (get-topic sess-id topic-uri)]
           (apply on-publish sess-id topic event pub-args)
-          (if (fn? on-pub-cb)
-            (on-pub-cb sess-id topic event pub-args)))
+          (when (fn? on-pub-cb) (on-pub-cb sess-id topic event pub-args)))
 
         nil))))
 
@@ -241,9 +239,9 @@
   [channel callbacks]
   (let [cb-on-open  (get callbacks :on-open)
         cb-on-close (get callbacks :on-close)
-        sess-id (str (System/currentTimeMillis) "-" (next-sess-id))]
-    (add-client sess-id channel)
+        sess-id     (add-client channel)]
     (httpkit/on-close channel (on-close sess-id cb-on-close))
     (httpkit/on-receive channel (on-message sess-id callbacks))
     (send-welcome! sess-id)
-    (if (fn? cb-on-open) (cb-on-open sess-id))))
+    (when (fn? cb-on-open) (cb-on-open sess-id))
+    sess-id))
