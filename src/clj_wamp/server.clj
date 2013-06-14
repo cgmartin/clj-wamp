@@ -30,10 +30,11 @@
 (def ^:const URI-WAMP-ERROR-NOTFOUND (str URI-WAMP-ERROR "notfound"))
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 
-(def project-version
-  (apply str
-    (interpose "/"
-      (rest (take 3 (read-string (slurp "project.clj")))))))
+(def project-version "clj-wamp/0.4.1")
+; Problematic for JAR builds (without project file)
+;  (apply str
+;    (interpose "/"
+;      (rest (take 3 (read-string (slurp "project.clj")))))))
 
 
 (def max-sess-id (atom 0))

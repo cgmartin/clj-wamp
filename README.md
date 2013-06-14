@@ -13,7 +13,7 @@ http://wamp.ws/
 ## Usage
 
 ```clojure
-[clj-wamp "0.4.0"]
+[clj-wamp "0.4.1"]
 ```
 
 ## License
