@@ -46,7 +46,7 @@
 
 ;; Client utils
 
-(def clients (atom {})) ; TODO Needs load testing to find optimal ref granularity
+(def clients (atom {})) ; TODO needs ref transactions with topics
 
 (defn add-client
   "add a webservice client with it's corresponding event channel to a map of clients"
@@ -67,6 +67,7 @@
 (defn add-prefix
   "add a new curi prefix for a webservice client"
   [sess-id prefix uri]
+  (log/trace "New CURI Prefix [" sess-id "]" prefix uri)
   (swap! clients assoc-in [sess-id :prefixes prefix] uri))
 
 (defn get-topic
@@ -82,7 +83,7 @@
 
 ;; Topic utils
 
-(def topics (atom {})) ; TODO Needs load testing to find optimal ref granularity
+(def topics (atom {})) ; TODO needs ref transactions with topics
 
 (defn topic-subscribe
   "subscribe a webservice session to a topic"
@@ -118,6 +119,10 @@
       (if (some #{sess-id} includes)
         (apply send! sess-id data)))))
 
+(defn topic-clients [topic]
+  "get all client session ids within a topic"
+  (if-let [clients (@topics topic)]
+    (keys clients)))
 
 ;; WAMP websocket send! utils
 
@@ -128,7 +133,8 @@
         json-data (json/encode data)]
     (if (fn? channel) ; application callback?
       (channel data)
-      (httpkit/send! channel json-data))))
+      (httpkit/send! channel json-data))
+    (log/trace "Data sent:" data)))
 
 (defn send-welcome!
   "send wamp welcome message format to a websocket client.
@@ -163,24 +169,32 @@
   ([topic event]
     (topic-send! topic TYPE-ID-EVENT topic event))
   ([sess-id topic event]
-    (topic-broadcast! topic sess-id TYPE-ID-EVENT topic event)))
+    (topic-broadcast! topic sess-id TYPE-ID-EVENT topic event))
+  ([sess-id topic event self?]
+    (if (true? self?)
+      (send! sess-id TYPE-ID-EVENT topic event)
+      (send-event! sess-id topic event))))
 
 
 ;; WAMP callbacks
 
 (defn- callback-rewrite
+  "utility for rewriting params with an optional callback fn"
   [callback & params]
-  (let [params (if (fn? callback) (apply callback params) params)]
-    params))
+  (if (fn? callback)
+    (apply callback params)
+    (when (true? callback)
+      params)))
 
 (defn- on-close
-  "callback that handles cleanup of clients and topics"
-  [sess-id callback]
+  "clean up clients and topics upon disconnect"
+  [sess-id close-cb unsub-cb]
   (fn [status]
-    (when (fn? callback) (callback sess-id status))
+    (when (fn? close-cb) (close-cb sess-id status))
     (if-let [sess-topics (get-in @clients [sess-id :topics])]
       (doseq [[topic _] sess-topics]
-        (topic-unsubscribe topic sess-id)))
+        (topic-unsubscribe topic sess-id)
+        (when (fn? unsub-cb) (unsub-cb sess-id topic))))
     (del-client sess-id)))
 
 (defn- call-success
@@ -202,16 +216,15 @@
     (when kill (httpkit/close (get-client-channel sess-id)))))
 
 (defn- on-call
-  "callback that handles client call messages"
+  "handle client call (RPC) messages"
   [callbacks sess-id topic call-id & call-params]
   (if-let [rpc-cb (callbacks topic)]
   ; TODO try catch
     (let [cb-params [sess-id topic call-id call-params]
-          cb-params (apply callback-rewrite
-                       (callbacks :on-before) cb-params)
+          cb-params (apply callback-rewrite (callbacks :on-before) cb-params)
           [sess-id topic call-id call-params] cb-params
-          rpc-result (apply rpc-cb call-params)
-          error (rpc-result :error)]
+          rpc-result (apply rpc-cb sess-id call-params)
+          error      (rpc-result :error)]
       (if (nil? error)
         (call-success sess-id topic call-id
           (rpc-result :result) (callbacks :on-after-success))
@@ -220,22 +233,33 @@
       URI-WAMP-ERROR-NOTFOUND DESC-WAMP-ERROR-NOTFOUND)))
 
 (defn- map-key-or-prefix
+  "finds a map value by key or string key prefix (ending with *)"
   [m k]
   (if-let [v (m k)] v
     (some #(when (not (nil? %)) %)
       (for [[mk mv] m]
-        (when (and (= \* (last mk))
+        (when (and (not (keyword? mk)) (not (false? mv))
+                (= \* (last mk))
                 (= (take (dec (count mk)) k) (butlast mk)))
           mv)))))
 
 (defn- on-subscribe
   [callbacks sess-id topic]
-  (when-let [topic-cb (map-key-or-prefix callbacks topic)]
-    (when (or (true? topic-cb) (topic-cb sess-id topic)))
-      (topic-subscribe topic sess-id)))
+  (when (nil? (get-in @topics [topic sess-id]))
+    (when-let [topic-cb (map-key-or-prefix callbacks topic)]
+      (when (or (true? topic-cb) (topic-cb sess-id topic))
+        (let [on-after-cb (callbacks :on-after)]
+          (topic-subscribe topic sess-id)
+          (when (fn? on-after-cb)
+            (on-after-cb sess-id topic)))))))
+
+(defn- get-publish-exclude [sess-id exclude]
+  (if (= Boolean (type exclude))
+    (when (true? exclude) [sess-id])
+    exclude))
 
 (defn- on-publish
-  "callback that handles client publish messages,
+  "handle client publish messages,
   sending events to clients subscribed to the topic.
   [ TYPE_ID_PUBLISH , topicURI , event [, exclude [, eligible ]]"
   ([callbacks sess-id topic event]
@@ -243,23 +267,24 @@
   ([callbacks sess-id topic event exclude]
     (on-publish callbacks sess-id topic event exclude nil))
   ([callbacks sess-id topic event exclude eligible]
-    (when-let [topic-cb (map-key-or-prefix callbacks topic)]
+    (when-let [pub-cb (map-key-or-prefix callbacks topic)]
       (let [cb-params [sess-id topic event exclude eligible]
-            cb-params (apply callback-rewrite topic-cb cb-params)
-            [sess-id topic call-id call-params] cb-params]
-        (if-not (nil? eligible)
-          (topic-emit! topic eligible TYPE-ID-EVENT topic event)
-          (let [exclude (if (= Boolean (type exclude))
-                          (if (true? exclude) [sess-id] nil)
-                          exclude)]
-            (topic-broadcast! topic exclude TYPE-ID-EVENT topic event)))))))
+            cb-params (apply callback-rewrite pub-cb cb-params)
+            on-after-cb (callbacks :on-after)]
+        (when (sequential? cb-params)
+          (let [[sess-id topic event exclude eligible] cb-params
+                exclude (get-publish-exclude sess-id exclude)]
+            (if-not (nil? eligible)
+              (topic-emit! topic eligible TYPE-ID-EVENT topic event)
+              (topic-broadcast! topic exclude TYPE-ID-EVENT topic event))
+            (when (fn? on-after-cb) (on-after-cb sess-id topic event exclude eligible))))))))
 
 (defn- on-message
-  "callback that handles all http-kit messages.
-  parses the incoming data as json and finds the appropriate
-  wamp callback."
+  "handle all http-kit messages. parses the incoming data as json
+  and finds the appropriate wamp callback."
   [sess-id callbacks]
   (fn [data]
+    (log/trace "Data received:" data)
     (let [[msg-type & msg-params] (json/decode data) ; TODO parse error handling
           on-call-cbs  (callbacks :on-call)
           on-sub-cbs   (callbacks :on-subscribe)
@@ -278,12 +303,11 @@
 
         5 ;TYPE-ID-SUBSCRIBE
         (let [topic (get-topic sess-id (first msg-params))]
-          (if (nil? (get-in @topics [topic sess-id]))
-            (on-subscribe on-sub-cbs sess-id topic)))
+          (on-subscribe on-sub-cbs sess-id topic))
 
         6 ;TYPE-ID-UNSUBSCRIBE
         (let [topic (get-topic sess-id (first msg-params))]
-          (if (true? (get-in @topics [topic sess-id]))
+          (when (true? (get-in @topics [topic sess-id]))
             (topic-unsubscribe topic sess-id)
             (when (fn? on-unsub-cb) (on-unsub-cb sess-id topic))))
 
@@ -292,7 +316,7 @@
               topic (get-topic sess-id topic-uri)]
           (apply on-publish on-pub-cbs sess-id topic event pub-args))
 
-        ; TODO close connection on bad message
+        ; TODO close connection on bad message?
         nil))))
 
 
@@ -301,9 +325,8 @@
   for using the wamp sub-protocol"
   [channel callbacks]
   (let [cb-on-open  (callbacks :on-open)
-        cb-on-close (callbacks :on-close)
         sess-id     (add-client channel)]
-    (httpkit/on-close channel (on-close sess-id cb-on-close))
+    (httpkit/on-close channel (on-close sess-id (callbacks :on-close) (callbacks :on-unsubscribe)))
     (httpkit/on-receive channel (on-message sess-id callbacks))
     (send-welcome! sess-id)
     (when (fn? cb-on-open) (cb-on-open sess-id))

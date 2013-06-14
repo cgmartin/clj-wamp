@@ -10,7 +10,7 @@
 (def ws-opened (atom nil))
 
 (defn ws-on-open-cb []
-  (fn [sess-id]
+  (fn [sess-id]       ; TODO?
     (reset! ws-opened {:sess-id sess-id})))
 
 (defn ws-opened? [sess-id]
@@ -32,6 +32,7 @@
     (reset! ws-closed nil)
     (or (and (nil? sess-id) (nil? close-info))
       (and
+        (not (nil? close-info))
         (= sess-id (close-info :sess-id))
         (= status  (close-info :status))))))
 
@@ -54,6 +55,7 @@
     (or
       (and (nil? sess-id) (nil? call-info))
       (and
+        (not (nil? call-info))
         (= sess-id (call-info :sess-id))
         (= topic   (call-info :topic))
         (= call-id (call-info :call-id))))))
@@ -77,6 +79,7 @@
     (or
       (and (nil? sess-id) (nil? call-info))
       (and
+        (not (nil? call-info))
         (= sess-id (call-info :sess-id))
         (= topic   (call-info :topic))
         (= call-id (call-info :call-id))))))
@@ -100,60 +103,121 @@
     (or
       (and (nil? sess-id) (nil? call-info))
       (and
+        (not (nil? call-info))
         (= sess-id (call-info :sess-id))
         (= topic   (call-info :topic))
         (= call-id (call-info :call-id))))))
 
 ;; test rpc functions
 
-(defn rpc-add [& params]
+(defn rpc-add [sess-id & params]
   {:result (apply + params)})
 
-(defn rpc-give-error [& params]
+(defn rpc-give-error [sess-id & params]
   {:error {:uri "http://example.com/error#give-error"
            :message "Test error"
            :description "Test error description"}})
 
 
-;; pubsub handlers
+;; subscription handlers
 
-(def pubsub-sub (atom nil))
+(def sub (atom nil))
+(def sub-after (atom nil))
 
-(defn pubsub-on-sub
+(defn on-sub?
   [sess-id topic]
-  (reset! pubsub-sub {:sess-id sess-id
-                      :topic   topic})
+  (reset! sub {:sess-id sess-id
+               :topic   topic})
   true)
 
 (defn subscribed? [sess-id topic]
-  (let [sub-msg @pubsub-sub]
-    (reset! pubsub-sub nil)
+  (let [sub-msg @sub]
+    (reset! sub nil)
     (or
       (and (nil? sess-id) (nil? sub-msg))
       (and
+        (not (nil? sub-msg))
         (= sess-id (sub-msg :sess-id))
-        (= topic (sub-msg :topic))))))
+        (= topic   (sub-msg :topic))))))
 
-(def pubsub-pub (atom nil))
+(defn on-after-sub
+  [sess-id topic]
+  (reset! sub-after {:sess-id sess-id
+                     :topic   topic}))
 
-(defn pubsub-on-pub
+(defn after-sub?
+  [sess-id topic]
+  (let [sub-msg @sub-after]
+    (reset! sub-after nil)
+    (or
+      (and (nil? sess-id) (nil? sub-msg))
+      (and
+        (not (nil? sub-msg))
+        (= sess-id (sub-msg :sess-id))
+        (= topic   (sub-msg :topic))))))
+
+;; publish handlers
+
+(def pub (atom nil))
+(def pub-after (atom nil))
+
+(defn on-pub
   [sess-id topic event exclude eligible]
-  (reset! pubsub-pub {:sess-id  sess-id
-                      :topic    topic
-                      :event    event
-                      :exclude  exclude
-                      :eligible eligible})
+  (reset! pub {:sess-id  sess-id
+               :topic    topic
+               :event    event
+               :exclude  exclude
+               :eligible eligible})
   [sess-id topic event exclude eligible])
 
 (defn published? [sess-id topic event]
-  (let [pub-msg @pubsub-pub]
-    (reset! pubsub-pub nil)
+  (let [pub-msg @pub]
+    (reset! pub nil)
     (or
       (and (nil? sess-id) (nil? pub-msg))
       (and
+        (not (nil? pub-msg))
         (= sess-id (pub-msg :sess-id))
-        (= topic (pub-msg :topic))
-        (= event (pub-msg :event))))))
+        (= topic   (pub-msg :topic))
+        (= event   (pub-msg :event))))))
+
+(defn on-after-pub
+  [sess-id topic event exclude eligible]
+  (reset! pub-after {:sess-id  sess-id
+                     :topic    topic
+                     :event    event
+                     :exclude  exclude
+                     :eligible eligible}))
+
+(defn after-pub? [sess-id topic event]
+  (let [pub-msg @pub-after]
+    (reset! pub-after nil)
+    (or
+      (and (nil? sess-id) (nil? pub-msg))
+      (and
+        (not (nil? pub-msg))
+        (= sess-id (pub-msg :sess-id))
+        (= topic   (pub-msg :topic))
+        (= event   (pub-msg :event))))))
+
+;; unsubscribe handlers
+
+(def unsub (atom nil))
+
+(defn on-unsub
+  [sess-id topic]
+  (reset! unsub {:sess-id sess-id
+                 :topic   topic})
+  true)
+
+(defn unsubscribed? [sess-id topic]
+  (let [unsub-msg @unsub]
+    (reset! unsub nil)
+    (or
+      (and (nil? sess-id) (nil? unsub-msg))
+      (and
+        (= sess-id (unsub-msg :sess-id))
+        (= topic   (unsub-msg :topic))))))
 
 ;; data received test utils
 
@@ -172,21 +236,26 @@
 (def rpc-base-url "http://example.com/api#")
 (def evt-base-url "http://example.com/event#")
 
+(defn rpc-url [path] (str rpc-base-url path))
+(defn evt-url [path] (str evt-base-url path))
 
 (def test-handler-callbacks
   {:on-open  (ws-on-open-cb)
    :on-close (ws-on-close-cb)
-   :on-call {(str rpc-base-url "add")        rpc-add
-             (str rpc-base-url "give-error") rpc-give-error
-             :on-before        rpc-on-before-call
-             :on-after-error   rpc-on-after-call-error
-             :on-after-success rpc-on-after-call-success}
-   :on-subscribe {(str evt-base-url "prefix*") pubsub-on-sub
-                  (str evt-base-url "chat")    pubsub-on-sub
-                  (str evt-base-url "no-handler") true}
-   :on-publish   {(str evt-base-url "prefix*") pubsub-on-pub
-                  (str evt-base-url "chat")    pubsub-on-pub
-                  (str evt-base-url "no-handler") true}})
+   :on-call {(rpc-url "add")        rpc-add
+             (rpc-url "give-error") rpc-give-error
+             :on-before             rpc-on-before-call
+             :on-after-error        rpc-on-after-call-error
+             :on-after-success      rpc-on-after-call-success}
+   :on-subscribe {(evt-url "prefix*")    on-sub?
+                  (evt-url "chat")       on-sub?
+                  (evt-url "no-handler") true
+                  :on-after              on-after-sub}
+   :on-publish   {(evt-url "prefix*")    on-pub
+                  (evt-url "chat")       on-pub
+                  (evt-url "no-handler") true
+                  :on-after              on-after-pub}
+   :on-unsubscribe on-unsub})
 
 
 (deftest http-kit-handler-test
@@ -198,71 +267,83 @@
       #(let [sess-id (http-kit-handler client-receive test-handler-callbacks)]
          ; Test init
          (is (ws-opened? sess-id))
-         (is (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version]))
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
 
          ; Pub/Sub Events
          (@send (json/encode [TYPE-ID-PREFIX, "event", evt-base-url]))
          (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:chat"]))
-         (is (subscribed? sess-id (str evt-base-url "chat")))
+         (is (subscribed? sess-id (evt-url "chat")))
+         (is (after-sub?  sess-id (evt-url "chat")))
          (@send (json/encode [TYPE-ID-PUBLISH, "event:chat", "short-topic"]))
-         (is (published? sess-id (str evt-base-url "chat") "short-topic"))
-         (is (msg-received? [TYPE-ID-EVENT, (str evt-base-url "chat"), "short-topic"]))
+         (is (published? sess-id (evt-url "chat") "short-topic"))
+         (is (after-pub? sess-id (evt-url "chat") "short-topic"))
+         (msg-received? [TYPE-ID-EVENT, (str evt-base-url "chat"), "short-topic"])
 
-         (@send (json/encode [TYPE-ID-PUBLISH, (str evt-base-url "chat"), "full-topic"]))
-         (is (published? sess-id (str evt-base-url "chat") "full-topic"))
-         (is (msg-received? [TYPE-ID-EVENT, (str evt-base-url "chat"), "full-topic"]))
+         (@send (json/encode [TYPE-ID-PUBLISH, (evt-url "chat"), "full-topic"]))
+         (is (published? sess-id (evt-url "chat") "full-topic"))
+         (is (after-pub? sess-id (evt-url "chat") "full-topic"))
+         (msg-received? [TYPE-ID-EVENT, (evt-url "chat"), "full-topic"])
 
          (@send (json/encode [TYPE-ID-PUBLISH, "event:chat", "exclude-me", true]))
-         (is (published? sess-id (str evt-base-url "chat") "exclude-me"))
-         (is (msg-received? nil))
+         (is (published? sess-id (evt-url "chat") "exclude-me"))
+         (is (after-pub? sess-id (evt-url "chat") "exclude-me"))
+         (msg-received? nil)
 
          (@send (json/encode [TYPE-ID-UNSUBSCRIBE, "event:chat"]))
+         (is (unsubscribed? sess-id (evt-url "chat")))
          (@send (json/encode [TYPE-ID-PUBLISH, "event:chat", "unsubscribed"]))
-         (is (published? sess-id (str evt-base-url "chat") "unsubscribed"))
-         (is (msg-received? nil))
+         (is (published? sess-id (evt-url "chat") "unsubscribed"))
+         (is (after-pub? sess-id (evt-url "chat") "unsubscribed"))
+         (msg-received? nil)
 
          (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:prefix123"]))
-         (is (subscribed? sess-id (str evt-base-url "prefix123")))
+         (is (subscribed? sess-id (evt-url "prefix123")))
+         (is (after-sub?  sess-id (evt-url "prefix123")))
          (@send (json/encode [TYPE-ID-PUBLISH, "event:prefix123", "prefix-event"]))
-         (is (published? sess-id (str evt-base-url "prefix123") "prefix-event"))
-         (is (msg-received? [TYPE-ID-EVENT, (str evt-base-url "prefix123"), "prefix-event"]))
+         (is (published? sess-id (evt-url "prefix123") "prefix-event"))
+         (is (after-pub? sess-id (evt-url "prefix123") "prefix-event"))
+         (msg-received? [TYPE-ID-EVENT, (evt-url "prefix123"), "prefix-event"])
 
          (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:no-handler"]))
          (is (subscribed? nil nil))      ; callback only run on handlers
+         (is (after-sub?  sess-id (evt-url "no-handler")))
          (@send (json/encode [TYPE-ID-PUBLISH, "event:no-handler", "no-handler-event"]))
          (is (published? nil nil nil))   ; callback only run on handlers
-         (is (msg-received? [TYPE-ID-EVENT, (str evt-base-url "no-handler"), "no-handler-event"]))
+         (is (after-pub? sess-id (evt-url "no-handler") "no-handler-event"))
+         (msg-received? [TYPE-ID-EVENT, (evt-url "no-handler"), "no-handler-event"])
 
          (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:none"]))
          (is (subscribed? nil nil))
+         (is (after-sub?  nil nil))
          (@send (json/encode [TYPE-ID-PUBLISH, "event:none", "no-event"]))
          (is (published? nil nil nil))
-         (is (msg-received? nil))
+         (is (after-pub? nil nil nil))
+         (msg-received? nil)
 
          ; RPC Messaging
          (@send (json/encode [TYPE-ID-PREFIX, "api", rpc-base-url]))
          (@send (json/encode [TYPE-ID-CALL, "short-rpc", "api:add", 23, 99]))
-         (is (rpc-before-call? sess-id (str rpc-base-url "add") "short-rpc"))
-         (is (rpc-after-call-success? sess-id (str rpc-base-url "add") "short-rpc"))
-         (is (msg-received? [TYPE-ID-CALLRESULT, "short-rpc", 122]))
+         (is (rpc-before-call? sess-id (rpc-url "add") "short-rpc"))
+         (is (rpc-after-call-success? sess-id (rpc-url "add") "short-rpc"))
+         (msg-received? [TYPE-ID-CALLRESULT, "short-rpc", 122])
 
          (@send (json/encode [TYPE-ID-CALL, "full-rpc", "http://example.com/api#add", 1, 2]));
-         (is (rpc-before-call? sess-id (str rpc-base-url "add") "full-rpc"))
-         (is (rpc-after-call-success? sess-id (str rpc-base-url "add") "full-rpc"))
-         (is (msg-received? [TYPE-ID-CALLRESULT, "full-rpc", 3]))
+         (is (rpc-before-call? sess-id (rpc-url "add") "full-rpc"))
+         (is (rpc-after-call-success? sess-id (rpc-url "add") "full-rpc"))
+         (msg-received? [TYPE-ID-CALLRESULT, "full-rpc", 3])
 
          (@send (json/encode [TYPE-ID-CALL, "error-rpc", "api:give-error", 1, 2]))
-         (is (rpc-before-call? sess-id (str rpc-base-url "give-error") "error-rpc"))
-         (is (rpc-after-call-error? sess-id (str rpc-base-url "give-error") "error-rpc"))
-         (is (msg-received? [TYPE-ID-CALLERROR, "error-rpc",
-                             "http://example.com/error#give-error",
-                             "Test error" "Test error description"]))
+         (is (rpc-before-call? sess-id (rpc-url "give-error") "error-rpc"))
+         (is (rpc-after-call-error? sess-id (rpc-url "give-error") "error-rpc"))
+         (msg-received? [TYPE-ID-CALLERROR, "error-rpc",
+                         "http://example.com/error#give-error",
+                         "Test error" "Test error description"])
 
          (@send (json/encode [TYPE-ID-CALL, "not-found-rpc", "api:not-found", 1, 2]))
          (is (rpc-before-call? nil nil nil))        ; callback only run on existing calls
          (is (rpc-after-call-error? nil nil nil))   ; callback only run on existing calls
-         (is (msg-received? [TYPE-ID-CALLERROR, "not-found-rpc",
-                             "http://api.wamp.ws/error#notfound", "not found error"]))
+         (msg-received? [TYPE-ID-CALLERROR, "not-found-rpc",
+                         "http://api.wamp.ws/error#notfound", "not found error"])
 
          ; Test close
          (is (not (nil? (get @clients sess-id))))
