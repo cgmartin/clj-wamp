@@ -17,7 +17,7 @@ For information on the WAMP specification, visit [wamp.ws](http://wamp.ws).
 
 Add the following dependency to your `project.clj` file:
 ```clojure
-[clj-wamp "0.4.1"]
+[clj-wamp "0.4.2"]
 ```
 
 Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`, and attach to the server:
