@@ -332,6 +332,13 @@
          (is (rpc-after-call-success? sess-id (rpc-url "add") "full-rpc"))
          (msg-received? [TYPE-ID-CALLRESULT, "full-rpc", 3])
 
+         (@send (json/encode [TYPE-ID-CALL, "exception-rpc", "api:add", 23, "abc"]))
+         (is (rpc-before-call? sess-id (rpc-url "add") "exception-rpc"))
+         (is (rpc-after-call-error? sess-id (rpc-url "add") "exception-rpc"))
+         (msg-received? [TYPE-ID-CALLERROR, "exception-rpc",
+                         "http://api.wamp.ws/error#internal",
+                         "internal error" "java.lang.String cannot be cast to java.lang.Number"])
+
          (@send (json/encode [TYPE-ID-CALL, "error-rpc", "api:give-error", 1, 2]))
          (is (rpc-before-call? sess-id (rpc-url "give-error") "error-rpc"))
          (is (rpc-after-call-error? sess-id (rpc-url "give-error") "error-rpc"))
@@ -341,7 +348,7 @@
 
          (@send (json/encode [TYPE-ID-CALL, "not-found-rpc", "api:not-found", 1, 2]))
          (is (rpc-before-call? nil nil nil))        ; callback only run on existing calls
-         (is (rpc-after-call-error? nil nil nil))   ; callback only run on existing calls
+         (is (rpc-after-call-error? sess-id (rpc-url "not-found") "not-found-rpc"))
          (msg-received? [TYPE-ID-CALLERROR, "not-found-rpc",
                          "http://api.wamp.ws/error#notfound", "not found error"])
 

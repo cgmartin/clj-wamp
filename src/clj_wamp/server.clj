@@ -3,7 +3,8 @@
     :doc "Clojure implementation of the WebSocket Application Messaging Protocol"}
   (:use [clojure.core.incubator :only [dissoc-in]]
         [clojure.string :only [split]])
-  (:require [org.httpkit.server :as httpkit]
+  (:require [clojure.java.io :as io]
+            [org.httpkit.server :as httpkit]
             [cheshire.core :as json]
             [clojure.tools.logging :as log]))
 
@@ -19,29 +20,22 @@
 (def ^:const TYPE-ID-PUBLISH     7) ; Client-to-server (PubSub)
 (def ^:const TYPE-ID-EVENT       8) ; Server-to-client (PubSub)
 
-(def ^:const URI-WAMP-BASE "http://api.wamp.ws/")
-(def ^:const URI-WAMP-ERROR (str URI-WAMP-BASE "error#"))
-(def ^:const URI-WAMP-PROCEDURE (str URI-WAMP-BASE "procedure#"))
-(def ^:const URI-WAMP-TOPIC (str URI-WAMP-BASE "topic#"))
-(def ^:const URI-WAMP-ERROR-GENERIC (str URI-WAMP-ERROR "generic"))
-(def ^:const DESC-WAMP-ERROR-GENERIC "generic error")
-(def ^:const URI-WAMP-ERROR-INTERNAL (str URI-WAMP-ERROR "internal"))
+(def ^:const URI-WAMP-BASE            "http://api.wamp.ws/")
+(def ^:const URI-WAMP-ERROR           (str URI-WAMP-BASE "error#"))
+(def ^:const URI-WAMP-PROCEDURE       (str URI-WAMP-BASE "procedure#"))
+(def ^:const URI-WAMP-TOPIC           (str URI-WAMP-BASE "topic#"))
+(def ^:const URI-WAMP-ERROR-GENERIC   (str URI-WAMP-ERROR "generic"))
+(def ^:const DESC-WAMP-ERROR-GENERIC  "generic error")
+(def ^:const URI-WAMP-ERROR-INTERNAL  (str URI-WAMP-ERROR "internal"))
 (def ^:const DESC-WAMP-ERROR-INTERNAL "internal error")
-(def ^:const URI-WAMP-ERROR-NOTFOUND (str URI-WAMP-ERROR "notfound"))
+(def ^:const URI-WAMP-ERROR-NOTFOUND  (str URI-WAMP-ERROR "notfound"))
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 
 (def project-version "clj-wamp/0.4.1")
-; Problematic for JAR builds (without project file)
-;  (apply str
-;    (interpose "/"
-;      (rest (take 3 (read-string (slurp "project.clj")))))))
-
 
 (def max-sess-id (atom 0))
 
-(defn next-sess-id
-  "return the next (incremented) webservice session id"
-  []
+(defn- next-sess-id []
   (swap! max-sess-id inc))
 
 
@@ -56,8 +50,7 @@
     (swap! clients assoc sess-id {:channel channel})
     sess-id))
 
-(defn get-client-channel
-  [sess-id]
+(defn get-client-channel [sess-id]
   (get-in @clients [sess-id :channel]))
 
 (defn del-client
@@ -132,10 +125,11 @@
   [sess-id & data]
   (let [channel (get-client-channel sess-id)
         json-data (json/encode data)]
+    (log/trace "Sending data:" data)
     (if (fn? channel) ; application callback?
       (channel data)
-      (httpkit/send! channel json-data))
-    (log/trace "Data sent:" data)))
+      (when channel
+        (httpkit/send! channel json-data)))))
 
 (defn send-welcome!
   "send wamp welcome message format to a websocket client.
@@ -220,18 +214,26 @@
   "handle client call (RPC) messages"
   [callbacks sess-id topic call-id & call-params]
   (if-let [rpc-cb (callbacks topic)]
-  ; TODO try catch
-    (let [cb-params [sess-id topic call-id call-params]
-          cb-params (apply callback-rewrite (callbacks :on-before) cb-params)
-          [sess-id topic call-id call-params] cb-params
-          rpc-result (apply rpc-cb sess-id call-params)
-          error      (rpc-result :error)]
-      (if (nil? error)
-        (call-success sess-id topic call-id
-          (rpc-result :result) (callbacks :on-after-success))
-        (call-error sess-id topic call-id error (callbacks :on-after-error))))
-    (send-call-error! sess-id call-id
-      URI-WAMP-ERROR-NOTFOUND DESC-WAMP-ERROR-NOTFOUND)))
+    (try
+      (let [cb-params [sess-id topic call-id call-params]
+            cb-params (apply callback-rewrite (callbacks :on-before) cb-params)
+            [sess-id topic call-id call-params] cb-params
+            rpc-result (apply rpc-cb sess-id call-params)
+            error      (rpc-result :error)]
+        (if (nil? error)
+          (call-success sess-id topic call-id
+            (rpc-result :result) (callbacks :on-after-success))
+          (call-error sess-id topic call-id error (callbacks :on-after-error))))
+      (catch Exception e
+        (call-error sess-id topic call-id
+          {:uri URI-WAMP-ERROR-INTERNAL
+           :message DESC-WAMP-ERROR-INTERNAL
+           :description (.getMessage e)}
+          (callbacks :on-after-error))))
+    (call-error sess-id topic call-id
+      {:uri URI-WAMP-ERROR-NOTFOUND
+       :message DESC-WAMP-ERROR-NOTFOUND}
+      (callbacks :on-after-error))))
 
 (defn- map-key-or-prefix
   "finds a map value by key or string key prefix (ending with *)"
