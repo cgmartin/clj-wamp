@@ -7,8 +7,8 @@ for HTTP Kit servers.
 
 *Warning: Signature in flux, beta testing. Check back soon for a 1.0.0 release*
 
-Visit [cljwamp.us](http://cljwamp.us) for live demos and additional information. See [clj-wamp-example] for an example
-project and source code.
+Visit [cljwamp.us](http://cljwamp.us) for live demos and additional information.
+See [clj-wamp-example](https://github.com/cgmartin/clj-wamp-example) for an example project and source code.
 
 For information on HTTP Kit, a Ring-compatible HTTP server for Clojure, visit [http-kit.org](http://http-kit.org/).
 
