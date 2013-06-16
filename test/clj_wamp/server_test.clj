@@ -5,6 +5,14 @@
             [cheshire.core :as json]
             [clojure.tools.logging :as log]))
 
+(def real-proj-ver
+  (apply str
+    (interpose "/"
+      (rest (take 3 (read-string (slurp "project.clj")))))))
+
+(deftest project-version-test
+  (is (= real-proj-ver project-version)))
+
 ;; :on-open callback test utils
 
 (def ws-opened (atom nil))
@@ -110,18 +118,16 @@
 
 ;; test rpc functions
 
-(defn rpc-add [sess-id & params]
+(defn rpc-add [& params]
   {:result (apply + params)})
+
+(defn rpc-sess-id [& params]
+  {:result *call-sess-id*})
 
 (defn rpc-give-error [sess-id & params]
   {:error {:uri "http://example.com/error#give-error"
            :message "Test error"
            :description "Test error description"}})
-
-(defn rpc-as-is [f]
-  (fn [sess-id & params]
-    (apply f params)))
-
 
 ;; subscription handlers
 
@@ -247,7 +253,8 @@
   {:on-open  (ws-on-open-cb)
    :on-close (ws-on-close-cb)
    :on-call {(rpc-url "add")        rpc-add        ; returns a map with result
-             (rpc-url "subtract")   (rpc-as-is -)  ; fn returns value as-is
+             (rpc-url "subtract")   -              ; fn returns value as-is
+             (rpc-url "sess-id")    rpc-sess-id    ; returns bound *call-sess-id*
              (rpc-url "give-error") rpc-give-error
              :on-before             rpc-on-before-call
              :on-after-error        rpc-on-after-call-error
@@ -341,6 +348,11 @@
          (is (rpc-before-call? sess-id (rpc-url "subtract") "as-is-rpc"))
          (is (rpc-after-call-success? sess-id (rpc-url "subtract") "as-is-rpc"))
          (msg-received? [TYPE-ID-CALLRESULT, "as-is-rpc", 6])
+
+         (@send (json/encode [TYPE-ID-CALL, "sess-id-rpc", "api:sess-id"]))
+         (is (rpc-before-call? sess-id (rpc-url "sess-id") "sess-id-rpc"))
+         (is (rpc-after-call-success? sess-id (rpc-url "sess-id") "sess-id-rpc"))
+         (msg-received? [TYPE-ID-CALLRESULT, "sess-id-rpc", sess-id])
 
          (@send (json/encode [TYPE-ID-CALL, "exception-rpc", "api:add", 23, "abc"]))
          (is (rpc-before-call? sess-id (rpc-url "add") "exception-rpc"))

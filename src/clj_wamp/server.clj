@@ -31,7 +31,7 @@
 (def ^:const URI-WAMP-ERROR-NOTFOUND  (str URI-WAMP-ERROR "notfound"))
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 
-(def project-version "clj-wamp/0.4.2")
+(def project-version "clj-wamp/0.5.0")
 
 (def max-sess-id (atom 0))
 
@@ -212,6 +212,9 @@
     (send-call-error! sess-id call-id err-uri err-msg err-desc)
     (when kill (httpkit/close (get-client-channel sess-id)))))
 
+; Optional session id for rpc calls
+(def ^:dynamic *call-sess-id* nil)
+
 (defn- on-call
   "handle client call (RPC) messages"
   [callbacks sess-id topic call-id & call-params]
@@ -220,7 +223,8 @@
       (let [cb-params [sess-id topic call-id call-params]
             cb-params (apply callback-rewrite (callbacks :on-before) cb-params)
             [sess-id topic call-id call-params] cb-params
-            rpc-result (apply rpc-cb sess-id call-params)
+            rpc-result (binding [*call-sess-id* sess-id]
+                         (apply rpc-cb call-params))
             error      (:error  rpc-result)
             result     (:result rpc-result)]
         (if (and (nil? error) (nil? result))

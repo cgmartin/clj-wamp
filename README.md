@@ -18,10 +18,10 @@ For information on the WAMP specification, visit [wamp.ws](http://wamp.ws).
 
 Add the following dependency to your `project.clj` file:
 ```clojure
-[clj-wamp "0.4.2"]
+[clj-wamp "0.5.0"]
 ```
 
-Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`, and attach to the server:
+Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`:
 
 ```clojure
 (ns clj-wamp-example
@@ -41,7 +41,7 @@ Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`, and attach to th
         {:on-open        on-open-fn     ; (fn [sess-id] ...)
          :on-close       on-close-fn    ; (fn [sess-id status] ...)
 
-         :on-call        {(rpc-url "add")    rpc-add            ; RPC topic map (fn [sess-id & params] ...)
+         :on-call        {(rpc-url "add")    +                  ; map topic to RPC fn call
                           :on-before         on-before-call-fn  ; broker incoming params or
                                                                 ; return false to restrict rpc access
                           :on-after-error    on-after-call-error-fn
