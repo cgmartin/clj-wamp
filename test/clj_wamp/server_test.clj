@@ -10,7 +10,7 @@
 (def ws-opened (atom nil))
 
 (defn ws-on-open-cb []
-  (fn [sess-id]       ; TODO?
+  (fn [sess-id]
     (reset! ws-opened {:sess-id sess-id})))
 
 (defn ws-opened? [sess-id]

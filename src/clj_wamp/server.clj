@@ -31,7 +31,7 @@
 (def ^:const URI-WAMP-ERROR-NOTFOUND  (str URI-WAMP-ERROR "notfound"))
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 
-(def project-version "clj-wamp/0.4.1")
+(def project-version "clj-wamp/0.4.2")
 
 (def max-sess-id (atom 0))
 
