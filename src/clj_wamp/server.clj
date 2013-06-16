@@ -44,22 +44,24 @@
 (def clients (atom {})) ; TODO needs ref transactions with topics
 
 (defn add-client
-  "add a webservice client with it's corresponding event channel to a map of clients"
+  "add a websocket client with it's corresponding event channel to a map of clients"
   [channel]
   (let [sess-id (str (System/currentTimeMillis) "-" (next-sess-id))]
     (swap! clients assoc sess-id {:channel channel})
     sess-id))
 
-(defn get-client-channel [sess-id]
+(defn get-client-channel
+  "returns the channel for a websocket client"
+  [sess-id]
   (get-in @clients [sess-id :channel]))
 
 (defn del-client
-  "remove a webservice session from the map of clients"
+  "remove a websocket session from the map of clients"
   [sess-id]
   (swap! clients dissoc sess-id))
 
 (defn add-prefix
-  "add a new curi prefix for a webservice client"
+  "add a new curi prefix for a websocket client"
   [sess-id prefix uri]
   (log/trace "New CURI Prefix [" sess-id "]" prefix uri)
   (swap! clients assoc-in [sess-id :prefixes prefix] uri))
@@ -80,25 +82,25 @@
 (def topics (atom {})) ; TODO needs ref transactions with topics
 
 (defn topic-subscribe
-  "subscribe a webservice session to a topic"
+  "subscribe a websocket session to a topic"
   [topic sess-id]
   (swap! topics assoc-in [topic sess-id] true)
   (swap! clients assoc-in [sess-id :topics topic] true))
 
 (defn topic-unsubscribe
-  "unsubscribe a webservice session from a topic"
+  "unsubscribe a websocket session from a topic"
   [topic sess-id]
   (swap! topics dissoc-in [topic sess-id])
   (swap! clients dissoc-in [sess-id :topics topic]))
 
 (defn topic-send!
-  "send an event to all webservice clients subscribed to a topic"
+  "send an event to all websocket clients subscribed to a topic"
   [topic & data]
   (doseq [[sess-id _] (@topics topic)]
     (apply send! sess-id data)))
 
 (defn topic-broadcast!
-  "send an event to webservice clients subscribed to a topic, except those excluded"
+  "send an event to websocket clients subscribed to a topic, except those excluded"
   [topic excludes & data]
   (let [excludes (if (sequential? excludes) excludes [excludes])]
     (doseq [[sess-id _] (@topics topic)]
@@ -106,7 +108,7 @@
         (apply send! sess-id data)))))
 
 (defn topic-emit!
-  "send an event to specific webservice clients subscribed to a topic"
+  "send an event to specific websocket clients subscribed to a topic"
   [topic includes & data]
   (let [includes (if (sequential? includes) includes [includes])]
     (doseq [[sess-id _] (@topics topic)]
@@ -219,11 +221,14 @@
             cb-params (apply callback-rewrite (callbacks :on-before) cb-params)
             [sess-id topic call-id call-params] cb-params
             rpc-result (apply rpc-cb sess-id call-params)
-            error      (rpc-result :error)]
-        (if (nil? error)
-          (call-success sess-id topic call-id
-            (rpc-result :result) (callbacks :on-after-success))
-          (call-error sess-id topic call-id error (callbacks :on-after-error))))
+            error      (:error  rpc-result)
+            result     (:result rpc-result)]
+        (if (and (nil? error) (nil? result))
+          ; No map with result or error? Assume successful rpc-result as-is
+          (call-success sess-id topic call-id rpc-result (callbacks :on-after-success))
+          (if (nil? error)
+            (call-success sess-id topic call-id result (callbacks :on-after-success))
+            (call-error   sess-id topic call-id error  (callbacks :on-after-error)))))
       (catch Exception e
         (call-error sess-id topic call-id
           {:uri URI-WAMP-ERROR-INTERNAL
@@ -324,8 +329,8 @@
 
 
 (defn http-kit-handler
-  "sets up the necessary http-kit websocket callbacks
-  for using the wamp sub-protocol"
+  "sets up the necessary http-kit websocket event handlers
+  for use with the wamp sub-protocol"
   [channel callbacks]
   (let [cb-on-open  (callbacks :on-open)
         sess-id     (add-client channel)]

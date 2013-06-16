@@ -118,6 +118,10 @@
            :message "Test error"
            :description "Test error description"}})
 
+(defn rpc-as-is [f]
+  (fn [sess-id & params]
+    (apply f params)))
+
 
 ;; subscription handlers
 
@@ -242,7 +246,8 @@
 (def test-handler-callbacks
   {:on-open  (ws-on-open-cb)
    :on-close (ws-on-close-cb)
-   :on-call {(rpc-url "add")        rpc-add
+   :on-call {(rpc-url "add")        rpc-add        ; returns a map with result
+             (rpc-url "subtract")   (rpc-as-is -)  ; fn returns value as-is
              (rpc-url "give-error") rpc-give-error
              :on-before             rpc-on-before-call
              :on-after-error        rpc-on-after-call-error
@@ -331,6 +336,11 @@
          (is (rpc-before-call? sess-id (rpc-url "add") "full-rpc"))
          (is (rpc-after-call-success? sess-id (rpc-url "add") "full-rpc"))
          (msg-received? [TYPE-ID-CALLRESULT, "full-rpc", 3])
+
+         (@send (json/encode [TYPE-ID-CALL, "as-is-rpc", "api:subtract", 13, 7]))
+         (is (rpc-before-call? sess-id (rpc-url "subtract") "as-is-rpc"))
+         (is (rpc-after-call-success? sess-id (rpc-url "subtract") "as-is-rpc"))
+         (msg-received? [TYPE-ID-CALLRESULT, "as-is-rpc", 6])
 
          (@send (json/encode [TYPE-ID-CALL, "exception-rpc", "api:add", 23, "abc"]))
          (is (rpc-before-call? sess-id (rpc-url "add") "exception-rpc"))
