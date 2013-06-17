@@ -375,10 +375,10 @@
                          "http://api.wamp.ws/error#notfound", "not found error"])
 
          ; Test close
-         (is (not (nil? (get @clients sess-id))))
+         (dosync (is (not (nil? (get @client-channels sess-id)))))
          (@close "close-status")
          (is (ws-closed? sess-id "close-status"))
-         (is (nil? (get @clients sess-id)))
-         (is (= {} @topics))
+         (dosync (is (nil? (get @client-channels sess-id))))
+         (dosync (is (= {} @topic-clients)))
          ))))
 

@@ -31,7 +31,7 @@
 (def ^:const URI-WAMP-ERROR-NOTFOUND  (str URI-WAMP-ERROR "notfound"))
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 
-(def project-version "clj-wamp/0.5.0")
+(def project-version "clj-wamp/0.6.0")
 
 (def max-sess-id (atom 0))
 
@@ -41,30 +41,34 @@
 
 ;; Client utils
 
-(def clients (atom {})) ; TODO needs ref transactions with topics
+(def client-channels (ref {}))
+(def client-prefixes (ref {}))
 
 (defn add-client
   "add a websocket client with it's corresponding event channel to a map of clients"
   [channel]
   (let [sess-id (str (System/currentTimeMillis) "-" (next-sess-id))]
-    (swap! clients assoc sess-id {:channel channel})
+    (dosync (alter client-channels assoc sess-id channel))
     sess-id))
 
 (defn get-client-channel
   "returns the channel for a websocket client"
   [sess-id]
-  (get-in @clients [sess-id :channel]))
+  (dosync (get @client-channels sess-id)))
 
 (defn del-client
   "remove a websocket session from the map of clients"
   [sess-id]
-  (swap! clients dissoc sess-id))
+  (dosync
+    (alter client-channels dissoc sess-id)
+    (alter client-prefixes dissoc sess-id)))
 
 (defn add-prefix
   "add a new curi prefix for a websocket client"
   [sess-id prefix uri]
   (log/trace "New CURI Prefix [" sess-id "]" prefix uri)
-  (swap! clients assoc-in [sess-id :prefixes prefix] uri))
+  (dosync
+    (alter client-prefixes assoc-in [sess-id prefix] uri)))
 
 (defn get-topic
   "get a full topic uri from a prefix"
@@ -72,53 +76,61 @@
   (let [topic (split curi #":")
         prefix (first topic)
         suffix (second topic)]
-    (if-let [uri (get-in @clients [sess-id :prefixes prefix])]
-      (str uri suffix)
-      curi)))
+    (dosync
+      (if-let [uri (get-in @client-prefixes [sess-id prefix])]
+        (str uri suffix)
+        curi))))
 
 
 ;; Topic utils
 
-(def topics (atom {})) ; TODO needs ref transactions with topics
+(def client-topics (ref {}))
+(def topic-clients (ref {}))
 
 (defn topic-subscribe
   "subscribe a websocket session to a topic"
   [topic sess-id]
-  (swap! topics assoc-in [topic sess-id] true)
-  (swap! clients assoc-in [sess-id :topics topic] true))
+  (dosync
+    (alter topic-clients assoc-in [topic sess-id] true)
+    (alter client-topics assoc-in [sess-id topic] true)))
 
 (defn topic-unsubscribe
   "unsubscribe a websocket session from a topic"
   [topic sess-id]
-  (swap! topics dissoc-in [topic sess-id])
-  (swap! clients dissoc-in [sess-id :topics topic]))
+  (dosync
+    (alter topic-clients dissoc-in [topic sess-id])
+    (alter client-topics dissoc-in [sess-id topic])))
 
 (defn topic-send!
   "send an event to all websocket clients subscribed to a topic"
   [topic & data]
-  (doseq [[sess-id _] (@topics topic)]
-    (apply send! sess-id data)))
+  (dosync
+    (doseq [[sess-id _] (@topic-clients topic)]
+      (apply send! sess-id data))))
 
 (defn topic-broadcast!
   "send an event to websocket clients subscribed to a topic, except those excluded"
   [topic excludes & data]
   (let [excludes (if (sequential? excludes) excludes [excludes])]
-    (doseq [[sess-id _] (@topics topic)]
-      (if (not-any? #{sess-id} excludes)
-        (apply send! sess-id data)))))
+    (dosync
+      (doseq [[sess-id _] (@topic-clients topic)]
+        (if (not-any? #{sess-id} excludes)
+          (apply send! sess-id data))))))
 
 (defn topic-emit!
   "send an event to specific websocket clients subscribed to a topic"
   [topic includes & data]
   (let [includes (if (sequential? includes) includes [includes])]
-    (doseq [[sess-id _] (@topics topic)]
+    (dosync
+      (doseq [[sess-id _] (@topic-clients topic)]
       (if (some #{sess-id} includes)
-        (apply send! sess-id data)))))
+        (apply send! sess-id data))))))
 
-(defn topic-clients [topic]
+(defn get-topic-clients [topic]
   "get all client session ids within a topic"
-  (if-let [clients (@topics topic)]
-    (keys clients)))
+  (dosync
+    (if-let [clients (@topic-clients topic)]
+      (keys clients))))
 
 ;; WAMP websocket send! utils
 
@@ -187,12 +199,13 @@
   "clean up clients and topics upon disconnect"
   [sess-id close-cb unsub-cb]
   (fn [status]
-    (when (fn? close-cb) (close-cb sess-id status))
-    (if-let [sess-topics (get-in @clients [sess-id :topics])]
-      (doseq [[topic _] sess-topics]
-        (topic-unsubscribe topic sess-id)
-        (when (fn? unsub-cb) (unsub-cb sess-id topic))))
-    (del-client sess-id)))
+    (dosync
+      (when (fn? close-cb) (close-cb sess-id status))
+      (if-let [sess-topics (@client-topics sess-id)]
+        (doseq [[topic _] sess-topics]
+          (topic-unsubscribe topic sess-id)
+          (when (fn? unsub-cb) (unsub-cb sess-id topic))))
+      (del-client sess-id))))
 
 (defn- call-success
   [sess-id topic call-id result on-after-cb]
@@ -233,12 +246,14 @@
           (if (nil? error)
             (call-success sess-id topic call-id result (callbacks :on-after-success))
             (call-error   sess-id topic call-id error  (callbacks :on-after-error)))))
+
       (catch Exception e
         (call-error sess-id topic call-id
           {:uri URI-WAMP-ERROR-INTERNAL
            :message DESC-WAMP-ERROR-INTERNAL
            :description (.getMessage e)}
           (callbacks :on-after-error))))
+
     (call-error sess-id topic call-id
       {:uri URI-WAMP-ERROR-NOTFOUND
        :message DESC-WAMP-ERROR-NOTFOUND}
@@ -257,13 +272,14 @@
 
 (defn- on-subscribe
   [callbacks sess-id topic]
-  (when (nil? (get-in @topics [topic sess-id]))
-    (when-let [topic-cb (map-key-or-prefix callbacks topic)]
-      (when (or (true? topic-cb) (topic-cb sess-id topic))
-        (let [on-after-cb (callbacks :on-after)]
-          (topic-subscribe topic sess-id)
-          (when (fn? on-after-cb)
-            (on-after-cb sess-id topic)))))))
+  (dosync
+    (when (nil? (get-in @topic-clients [topic sess-id]))
+      (when-let [topic-cb (map-key-or-prefix callbacks topic)]
+        (when (or (true? topic-cb) (topic-cb sess-id topic))
+          (let [on-after-cb (callbacks :on-after)]
+            (topic-subscribe topic sess-id)
+            (when (fn? on-after-cb)
+              (on-after-cb sess-id topic))))))))
 
 (defn- get-publish-exclude [sess-id exclude]
   (if (= Boolean (type exclude))
@@ -319,9 +335,10 @@
 
         6 ;TYPE-ID-UNSUBSCRIBE
         (let [topic (get-topic sess-id (first msg-params))]
-          (when (true? (get-in @topics [topic sess-id]))
-            (topic-unsubscribe topic sess-id)
-            (when (fn? on-unsub-cb) (on-unsub-cb sess-id topic))))
+          (dosync
+            (when (true? (get-in @topic-clients [topic sess-id]))
+              (topic-unsubscribe topic sess-id)
+              (when (fn? on-unsub-cb) (on-unsub-cb sess-id topic)))))
 
         7 ;TYPE-ID-PUBLISH
         (let [[topic-uri event & pub-args] msg-params
