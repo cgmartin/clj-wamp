@@ -180,7 +180,7 @@
   [callback & params]
   (if (fn? callback)
     (apply callback params)
-    (when (true? callback)
+    (when (or (nil? callback) (true? callback))
       params)))
 
 (defn- on-close
@@ -223,8 +223,8 @@
       (let [cb-params [sess-id topic call-id call-params]
             cb-params (apply callback-rewrite (callbacks :on-before) cb-params)
             [sess-id topic call-id call-params] cb-params
-            rpc-result (binding [*call-sess-id* sess-id]
-                         (apply rpc-cb call-params))
+            rpc-result (binding [*call-sess-id* sess-id]  ; bind optional sess-id
+                         (apply rpc-cb call-params))      ; use fn's own arg signature
             error      (:error  rpc-result)
             result     (:result rpc-result)]
         (if (and (nil? error) (nil? result))
