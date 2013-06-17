@@ -36,12 +36,14 @@ Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`:
   "Returns a http-kit websocket handler with wamp subprotocol"
   [req]
   (http-kit/with-channel req channel
-    (if (:websocket? req)
+    (if-not (:websocket? req)
+      (http-kit/close channel)
       (wamp/http-kit-handler channel
         {:on-open        on-open-fn     ; (fn [sess-id] ...)
          :on-close       on-close-fn    ; (fn [sess-id status] ...)
 
          :on-call        {(rpc-url "add")    +                  ; map topic to RPC fn call
+                          (rpc-url "echo")   identity
                           :on-before         on-before-call-fn  ; broker incoming params or
                                                                 ; return false to restrict rpc access
                           :on-after-error    on-after-call-error-fn
@@ -60,8 +62,7 @@ Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`:
                           (evt-url "pub-only") true
                           :on-after            on-publish-fn}
 
-         :on-unsubscribe on-unsubscribe-fn})
-      (http-kit/close channel))))
+         :on-unsubscribe on-unsubscribe-fn}))))
 
 (http-kit/run-server wamp-websocket-handler {:port 8080})
 ```
