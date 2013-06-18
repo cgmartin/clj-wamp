@@ -5,7 +5,7 @@ for HTTP Kit servers.
 
 [![Build Status](https://travis-ci.org/cgmartin/clj-wamp.png?branch=master)](https://travis-ci.org/cgmartin/clj-wamp)
 
-*Warning: Signature in flux, beta testing. Check back soon for a 1.0.0 release*
+**Warning: Immature / In beta**
 
 Visit [cljwamp.us](http://cljwamp.us) for live demos and additional information.
 See [clj-wamp-example](https://github.com/cgmartin/clj-wamp-example) for an example project and source code.
@@ -18,7 +18,7 @@ For information on the WAMP specification, visit [wamp.ws](http://wamp.ws).
 
 Add the following dependency to your `project.clj` file:
 ```clojure
-[clj-wamp "0.6.0"]
+[clj-wamp "1.0.0-beta1"]
 ```
 
 Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`:

@@ -217,8 +217,7 @@
 (defn on-unsub
   [sess-id topic]
   (reset! unsub {:sess-id sess-id
-                 :topic   topic})
-  true)
+                 :topic   topic}))
 
 (defn unsubscribed? [sess-id topic]
   (let [unsub-msg @unsub]
@@ -300,6 +299,16 @@
          (is (published? sess-id (evt-url "chat") "exclude-me"))
          (is (after-pub? sess-id (evt-url "chat") "exclude-me"))
          (msg-received? nil)
+
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:chat", "includes", false, [sess-id]]))
+         (is (published? sess-id (evt-url "chat") "includes"))
+         (is (after-pub? sess-id (evt-url "chat") "includes"))
+         (msg-received? [TYPE-ID-EVENT, (evt-url "chat"), "includes"])
+
+         (send-event! (evt-url "chat") "send-all-test")
+         (msg-received? [TYPE-ID-EVENT, (evt-url "chat"), "send-all-test"])
+
+         (is (= [sess-id] (get-topic-clients (evt-url "chat"))))
 
          (@send (json/encode [TYPE-ID-UNSUBSCRIBE, "event:chat"]))
          (is (unsubscribed? sess-id (evt-url "chat")))
