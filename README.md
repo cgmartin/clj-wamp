@@ -21,7 +21,7 @@ Add the following dependency to your `project.clj` file:
 [clj-wamp "1.0.0-beta1"]
 ```
 
-Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`:
+Run clj-wamp's http-kit-handler within http-kit's with-channel context:
 
 ```clojure
 (ns clj-wamp-example
@@ -39,33 +39,35 @@ Add clj-wamp's `http-kit-handler` to http-kit's `with-channel`:
     (if-not (:websocket? req)
       (http-kit/close channel)
       (wamp/http-kit-handler channel
-        {:on-open        on-open-fn     ; (fn [sess-id] ...)
-         :on-close       on-close-fn    ; (fn [sess-id status] ...)
+        ; Here be dragons...
+        {:on-open        on-open-fn
+         :on-close       on-close-fn
 
-         :on-call        {(rpc-url "add")    +                  ; map topic to RPC fn call
+         :on-call        {(rpc-url "add")    +                       ; map topics to RPC fn calls
                           (rpc-url "echo")   identity
-                          :on-before         on-before-call-fn  ; broker incoming params or
-                                                                ; return false to restrict rpc access
+                          :on-before         on-before-call-fn       ; broker incoming params or
+                                                                     ; return false to deny access
                           :on-after-error    on-after-call-error-fn
-                          :on-after-success  on-after-call-success-fn}
+                          :on-after-success  on-after-call-success-fn }
 
-         :on-subscribe   {(evt-url "chat")     chat-subscribe? ; allowed to subscribe? (fn [sess-id topic] ...)
-                          (evt-url "prefix*")  true            ; match topics by prefix
-                          (evt-url "sub-only") true            ; implicitly allowed
-                          (evt-url "pub-only") false           ; subscription is denied
-                          :on-after            on-subscribe-fn};
+         :on-subscribe   {(evt-url "chat")     chat-subscribe?  ; allowed to subscribe?
+                          (evt-url "prefix*")  true             ; match topics by prefix
+                          (evt-url "sub-only") true             ; implicitly allowed
+                          (evt-url "pub-only") false            ; subscription is denied
+                          :on-after            on-subscribe-fn }
 
-         :on-publish     {(evt-url "chat")     chat-broker-fn  ; custom event broker
-                                                               ; (fn [sess-id topic event exclude eligible] ...)
-                          (evt-url "prefix*")  true            ; pass events through as-is
-                          (evt-url "sub-only") false           ; publishing is denied
+         :on-publish     {(evt-url "chat")     chat-broker-fn   ; custom event broker
+                          (evt-url "prefix*")  true             ; pass events through as-is
+                          (evt-url "sub-only") false            ; publishing is denied
                           (evt-url "pub-only") true
-                          :on-after            on-publish-fn}
+                          :on-after            on-publish-fn }
 
-         :on-unsubscribe on-unsubscribe-fn}))))
+         :on-unsubscribe on-unsubscribe-fn }))))
 
 (http-kit/run-server wamp-websocket-handler {:port 8080})
 ```
+
+See [the docs](http://cljwamp.us/doc/index.html) for more information on the PubSub API and callback signatures.
 
 ## License
 
