@@ -18,7 +18,7 @@ For information on the WAMP specification, visit [wamp.ws](http://wamp.ws).
 
 Add the following dependency to your `project.clj` file:
 ```clojure
-[clj-wamp "1.0.0-beta1"]
+[clj-wamp "1.0.0-beta2"]
 ```
 
 Run clj-wamp's http-kit-handler within http-kit's with-channel context:
@@ -32,42 +32,45 @@ Run clj-wamp's http-kit-handler within http-kit's with-channel context:
 (defn rpc-url [path] (str "http://clj-wamp-example/api#"   path))
 (defn evt-url [path] (str "http://clj-wamp-example/event#" path))
 
-(defn wamp-websocket-handler
+(def origin-re #"https?://myhost")
+
+(defn my-wamp-handler
   "Returns a http-kit websocket handler with wamp subprotocol"
-  [req]
-  (http-kit/with-channel req channel
-    (if-not (:websocket? req)
-      (http-kit/close channel)
-      (wamp/http-kit-handler channel
-        ; Here be dragons...
-        {:on-open        on-open-fn
-         :on-close       on-close-fn
+  [request]
+  (wamp/with-channel-validation request channel origin-re
+    (wamp/http-kit-handler channel
+      ; Here be dragons...
+      {:on-open        on-open-fn
+       :on-close       on-close-fn
 
-         :on-call        {(rpc-url "add")    +                       ; map topics to RPC fn calls
-                          (rpc-url "echo")   identity
-                          :on-before         on-before-call-fn       ; broker incoming params or
-                                                                     ; return false to deny access
-                          :on-after-error    on-after-call-error-fn
-                          :on-after-success  on-after-call-success-fn }
+       :on-call        {(rpc-url "add")    +                       ; map topics to RPC fn calls
+                        (rpc-url "echo")   identity
+                        :on-before         on-before-call-fn       ; broker incoming params or
+                                                                   ; return false to deny access                         :on-after-error    on-after-call-error-fn
+                        :on-after-success  on-after-call-success-fn }
 
-         :on-subscribe   {(evt-url "chat")     chat-subscribe?  ; allowed to subscribe?
-                          (evt-url "prefix*")  true             ; match topics by prefix
-                          (evt-url "sub-only") true             ; implicitly allowed
-                          (evt-url "pub-only") false            ; subscription is denied
-                          :on-after            on-subscribe-fn }
+       :on-subscribe   {(evt-url "chat")     chat-subscribe?  ; allowed to subscribe?
+                        (evt-url "prefix*")  true             ; match topics by prefix
+                        (evt-url "sub-only") true             ; implicitly allowed
+                        (evt-url "pub-only") false            ; subscription is denied
+                        :on-after            on-subscribe-fn }
 
-         :on-publish     {(evt-url "chat")     chat-broker-fn   ; custom event broker
-                          (evt-url "prefix*")  true             ; pass events through as-is
-                          (evt-url "sub-only") false            ; publishing is denied
-                          (evt-url "pub-only") true
-                          :on-after            on-publish-fn }
+       :on-publish     {(evt-url "chat")     chat-broker-fn   ; custom event broker
+                        (evt-url "prefix*")  true             ; pass events through as-is
+                        (evt-url "sub-only") false            ; publishing is denied
+                        (evt-url "pub-only") true
+                        :on-after            on-publish-fn }
 
-         :on-unsubscribe on-unsubscribe-fn }))))
+       :on-unsubscribe on-unsubscribe-fn })))
 
-(http-kit/run-server wamp-websocket-handler {:port 8080})
+(http-kit/run-server my-wamp-handler {:port 8080})
 ```
 
 See [the docs](http://cljwamp.us/doc/index.html) for more information on the PubSub API and callback signatures.
+
+## Change Log
+
+[CHANGES.md](https://github.com/cgmartin/clj-wamp/blob/master/CHANGES.md)
 
 ## License
 
