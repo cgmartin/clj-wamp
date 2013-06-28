@@ -446,7 +446,10 @@
   "Compares a regular expression against the Origin: header.
   Used to help protect against CSRF."
   [origin-re req]
-  (re-matches origin-re (get-in req [:headers "origin"])))
+  (let [req-origin (get-in req [:headers "origin"])]
+    (if (or (nil? origin-re) (nil? req-origin))
+      true
+      (re-matches origin-re (get-in req [:headers "origin"])))))
 
 (defn subprotocol?
   "Checks if a protocol string exists in the Sec-WebSocket-Protocol
