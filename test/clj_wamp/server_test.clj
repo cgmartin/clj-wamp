@@ -383,6 +383,12 @@
          (msg-received? [TYPE-ID-CALLERROR, "not-found-rpc",
                          "http://api.wamp.ws/error#notfound", "not found error"])
 
+         ; Test invalid data
+         (@send "{asdadas}}asadasdasda{{{aasdas")
+         (msg-received? nil)
+         (@send (json/encode [-1, "invalid type"]))
+         (msg-received? nil)
+
          ; Test close
          (dosync (is (not (nil? (get @client-channels sess-id)))))
          (@close "close-status")
@@ -391,3 +397,12 @@
          (dosync (is (= {} @topic-clients)))
          ))))
 
+(deftest origin-match?-test
+  (is (origin-match? #"http://test" {:headers {"origin" "http://test"}}))
+  (is (not (origin-match? #"http://fail" {:headers {"origin" "http://test"}}))))
+
+(deftest subprotocol?-test
+  (is (not (subprotocol? "wamp" {})))
+  (is (subprotocol? "wamp" {:headers {"sec-websocket-protocol" "wamp"}}))
+  (is (subprotocol? "wamp" {:headers {"sec-websocket-protocol" "wamp, foo"}}))
+  (is (not (subprotocol? "bar" {:headers {"sec-websocket-protocol" "wamp, foo"}}))))

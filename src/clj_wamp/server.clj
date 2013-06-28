@@ -2,11 +2,12 @@
   ^{:author "Christopher Martin"
     :doc "Clojure implementation of the WebSocket Application Messaging Protocol"}
   (:use [clojure.core.incubator :only [dissoc-in]]
-        [clojure.string :only [split]])
+        [clojure.string :only [split trim lower-case]])
   (:require [clojure.java.io :as io]
             [org.httpkit.server :as httpkit]
             [cheshire.core :as json]
-            [clojure.tools.logging :as log]))
+            [clojure.tools.logging :as log])
+  (:import [org.httpkit.server AsyncChannel]))
 
 (declare send!)
 
@@ -143,7 +144,7 @@
   "Sends data to a websocket client."
   [sess-id & data]
   (let [channel-or-fn (get-client-channel sess-id)
-        json-data     (json/encode data)]
+        json-data     (json/encode data {:escape-non-ascii true})]
     (log/trace "Sending data:" data)
     (if (fn? channel-or-fn) ; application callback?
       (channel-or-fn data)
@@ -320,7 +321,9 @@
   [sess-id callbacks]
   (fn [data]
     (log/trace "Data received:" data)
-    (let [[msg-type & msg-params] (json/decode data) ; TODO parse error handling
+    (let [[msg-type & msg-params] (try (json/decode data)
+                                    (catch com.fasterxml.jackson.core.JsonParseException ex
+                                      [nil nil]))
           on-call-cbs  (callbacks :on-call)
           on-sub-cbs   (callbacks :on-subscribe)
           on-unsub-cb  (callbacks :on-unsubscribe)
@@ -437,3 +440,47 @@
     (send-welcome! sess-id)
     (when (fn? cb-on-open) (cb-on-open sess-id))
     sess-id))
+
+
+(defn origin-match?
+  "Compares a regular expression against the Origin: header.
+  Used to help protect against CSRF."
+  [origin-re req]
+  (re-matches origin-re (get-in req [:headers "origin"])))
+
+(defn subprotocol?
+  "Checks if a protocol string exists in the Sec-WebSocket-Protocol
+  list header."
+  [proto req]
+  (if-let [protocols (get-in req [:headers "sec-websocket-protocol"])]
+    (some #{proto}
+      (map #(lower-case (trim %))
+        (split protocols #",")))))
+
+(defmacro with-channel-validation
+  "Replaces HTTP Kit with-channel macro to do extra validation
+  for the wamp subprotocol and allowed origin URLs.
+
+  (defn my-wamp-handler [request]
+    (wamp/with-channel-validation request channel #\"https?://myhost\"
+      (wamp/http-kit-handler channel { ... })))
+
+  See org.httpkit.server for more information."
+  [request ch-name origin-re & body]
+  `(let [~ch-name (:async-channel ~request)]
+     (if (:websocket? ~request)
+       (if-let [key# (get-in ~request [:headers "sec-websocket-key"])]
+         (if (origin-match? ~origin-re ~request)
+           (if (subprotocol? "wamp" ~request)
+             (do
+               (.sendHandshake ~(with-meta ch-name {:tag `AsyncChannel})
+                 {"Upgrade"                "websocket"
+                  "Connection"             "Upgrade"
+                  "Sec-WebSocket-Accept"   (httpkit/accept key#)
+                  "Sec-WebSocket-Protocol" "wamp"})
+               ~@body
+               {:body ~ch-name})
+             {:status 400 :body "missing or bad WebSocket-Protocol"})
+           {:status 400 :body "missing or bad WebSocket-Origin"})
+         {:status 400 :body "missing or bad WebSocket-Key"})
+       {:status 400 :body "not websocket protocol"})))
