@@ -555,8 +555,7 @@
 
 (deftest origin-match?-test
   (is (origin-match? #"http://test" {:headers {"origin" "http://test"}}))
-  (is (origin-match? nil {:headers {"origin" "http://test"}}))
-  (is (origin-match? nil {:headers {}}))
+  (is (not (origin-match? #"http://fail" {:headers {}})))
   (is (not (origin-match? #"http://fail" {:headers {"origin" "http://test"}}))))
 
 (deftest subprotocol?-test

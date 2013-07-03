@@ -592,12 +592,11 @@
 
 (defn origin-match?
   "Compares a regular expression against the Origin: header.
-  Used to help protect against CSRF."
+  Used to help protect against CSRF, but do not depend on just
+  this check. Best to use a server-generated CSRF token for comparison."
   [origin-re req]
-  (let [req-origin (get-in req [:headers "origin"])]
-    (if (or (nil? origin-re) (nil? req-origin))
-      true
-      (re-matches origin-re (get-in req [:headers "origin"])))))
+  (if-let [req-origin (get-in req [:headers "origin"])]
+    (re-matches origin-re req-origin)))
 
 (defn subprotocol?
   "Checks if a protocol string exists in the Sec-WebSocket-Protocol
@@ -612,9 +611,11 @@
   "Replaces HTTP Kit with-channel macro to do extra validation
   for the wamp subprotocol and allowed origin URLs.
 
-  (defn my-wamp-handler [request]
-    (wamp/with-channel-validation request channel #\"https?://myhost\"
-      (wamp/http-kit-handler channel { ... })))
+  Example usage:
+
+    (defn my-wamp-handler [request]
+      (wamp/with-channel-validation request channel #\"https?://myhost\"
+        (wamp/http-kit-handler channel { ... })))
 
   See org.httpkit.server for more information."
   [request ch-name origin-re & body]
