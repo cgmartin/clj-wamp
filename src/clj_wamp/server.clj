@@ -321,6 +321,11 @@
             {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
                      :message "authentication key does not exist"}}))))))
 
+(defn cancel-auth-timer [sess-id]
+  (when-let [task (get-in @client-auth [sess-id :timer])]
+    (timer/cancel task)
+    (dosync (alter client-auth dissoc-in [sess-id :timer]))))
+
 (defn create-call-auth
   [perm-cb]
   (fn [& [signature]]
@@ -334,6 +339,7 @@
           (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
             (do
               (dosync (alter client-auth assoc-in [*call-sess-id* :auth?] true))
+              (cancel-auth-timer *call-sess-id*)
               (perm-cb *call-sess-id* auth-key))
             (do
               ; remove previous auth data, must request and authenticate again
@@ -359,6 +365,7 @@
   (when-let [auth-cbs (callbacks :on-auth)]
     (let [timeout-ms (auth-cbs :timeout 20000)
           task       (timer/schedule-task timeout-ms (auth-timeout sess-id))]
+      (dosync (alter client-auth assoc-in [sess-id :timer] task))
       task)))
 
 ;; WAMP PubSub/RPC callbacks
@@ -388,7 +395,7 @@
            :message DESC-WAMP-ERROR-INTERNAL
            :description (.getMessage e)}
           (callbacks :on-after-error))
-        (log/error e)))
+        (log/error "RPC Exception:" topic call-params e)))
 
     (call-error sess-id topic call-id
       {:uri URI-WAMP-ERROR-NOTFOUND
@@ -513,10 +520,10 @@
           {:on-open        on-open-fn
            :on-close       on-close-fn
 
-           :on-auth        {:allow-anon?     true
-                            :timeout         20000 ; 20 secs
-                            :get-secret      get-auth-secret-fn
-                            :get-permissions get-auth-permissions-fn}
+           :on-auth        {:allow-anon?     false ; allow anonymous authentication?
+                            :timeout         20000 ; default is 20 secs
+                            :secret          auth-secret-fn
+                            :permissions     auth-permissions-fn}
 
            :on-call        {(rpc-url \"add\")      +         ; map topics to rpc functions
                             (rpc-url \"echo\")     identity
@@ -543,13 +550,31 @@
     (on-open-fn sess-id)
     (on-close-fn sess-id status)
 
+    (auth-secret-fn sess-id auth-key auth-extra)
+      Provide the authentication secret for the key (ie. username) and
+      (optionally) extra information from the client. Return nil if the key
+      does not exist.
+
+    (auth-permissions-fn sess-id auth-key)
+      Returns a map of permissions the session is granted when the authentication
+      succeeds for the given key.
+
+      The permission map should be comprised of the topics that are allowed
+      for each category:
+
+        {:rpc       {\"http://example/rpc#call\"    true}
+         :subscribe {\"http://example/event#allow\" true
+                     \"http://example/event#deny\"  false}
+         :publish   {\"http://example/event#allow\" true}}
+
     (rpc-call ...)
       Can have any signature. The parameters received from the client will be applied as-is.
       The client session is also available in the bound *call-sess-id* var.
       The function may return a value as is, or in a result map: {:result \"my result\"},
       or as an error map: {:error {:uri \"http://example.com/error#give-error\"
                                    :message \"Test error\"
-                                   :description \"Test error description\"}}
+                                   :description \"Test error description\"
+                                   :kill false}} ; true will close the connection after send
 
     (on-before-call-fn sess-id topic call-id call-params)
       To allow call, return params as vector: [sess-id topic call-id call-params]
