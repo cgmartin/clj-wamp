@@ -235,10 +235,15 @@
 (defn client-receive [data]
   (swap! client-msgs conj data))
 
-(defn msg-received? [msg]
+(defn last-client-msg []
   (let [last-msg (last @client-msgs)]
     (reset! client-msgs [])
-    (is (= msg last-msg))))
+    last-msg))
+
+(defn msg-received? [msg]
+  (is (= msg (last-client-msg))))
+
+
 
 ;; topic base urls
 
@@ -396,6 +401,157 @@
          (dosync (is (nil? (get @client-channels sess-id))))
          (dosync (is (= {} @topic-clients)))
          ))))
+
+;; cr-auth handlers
+
+(defn auth-secret [sess-id auth-key extra] "secret")
+(defn auth-permissions [sess-id auth-key]
+  {:rpc       {(rpc-url "add")   true}
+   :subscribe {(evt-url "allow-sub") true
+               (evt-url "deny-pub")  true}
+   :publish   {(evt-url "allow-sub") true}})
+
+(def auth-handler-callbacks
+  {:on-auth      {:allow-anon? true
+                  :secret      auth-secret
+                  :permissions auth-permissions}
+   :on-call      {(rpc-url "add")   +
+                  (rpc-url "sub")   -}
+   :on-subscribe {(evt-url "allow-sub") on-sub?
+                  (evt-url "deny-sub")  on-sub?
+                  (evt-url "deny-pub")  on-sub?}
+   :on-publish   {(evt-url "allow-sub") on-pub
+                  (evt-url "deny-sub")  on-pub
+                  (evt-url "deny-pub")  on-pub}})
+
+(deftest http-kit-handler-auth-test
+  (let [close (atom nil)
+        send  (atom nil)]
+    (with-redefs-fn
+      {#'httpkit/on-close   (fn [ch cb] (reset! close cb))
+       #'httpkit/on-receive (fn [ch cb] (reset! send cb))
+       #'httpkit/close      (fn [ch]    (@close "forced"))}
+      #(let [sess-id (http-kit-handler client-receive auth-handler-callbacks)]
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+
+         ; send auth before auth request, expect error
+         (@send (json/encode [TYPE-ID-CALL, "auth-rpc1", URI-WAMP-CALL-AUTH, "foo"]))
+         (msg-received? [TYPE-ID-CALLERROR, "auth-rpc1",
+                         "http://api.wamp.ws/error#no-authentication-requested",
+                         "no authentication previously requested"])
+
+         ; send auth request
+         (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc1",
+                              URI-WAMP-CALL-AUTHREQ, "username", {:extra "stuff"}]))
+
+         (let [authreq-msg (last-client-msg)
+               challenge   (last authreq-msg)
+               secret      (auth-secret nil nil nil)]
+           ; send auth request again, expect error
+           (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc2",
+                                URI-WAMP-CALL-AUTHREQ, "username", {:extra "stuff"}]))
+           (msg-received? [TYPE-ID-CALLERROR, "auth-req-rpc2",
+                           "http://api.wamp.ws/error#authentication-already-requested",
+                           "authentication request already issued - authentication pending"])
+
+           ; send auth
+           (@send (json/encode [TYPE-ID-CALL, "auth-rpc2",
+                                URI-WAMP-CALL-AUTH, (hmac-sha-256 challenge secret)]))
+           (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc2", (auth-permissions nil nil)])
+
+           ; Test RPC/PubSub Authorization
+           ; permission allowed for add
+           (@send (json/encode [TYPE-ID-PREFIX, "api", rpc-base-url]))
+           (@send (json/encode [TYPE-ID-CALL, "add-rpc", "api:add", 23, 99]))
+           (msg-received? [TYPE-ID-CALLRESULT, "add-rpc", 122])
+           ; permission denied for sub
+           (@send (json/encode [TYPE-ID-CALL, "sub-rpc", "api:sub", 122, 99]))
+           (msg-received? [TYPE-ID-CALLERROR, "sub-rpc",
+                           "http://api.wamp.ws/error#unauthorized",
+                           "unauthorized"])
+           ; permission allowed for subscribe
+           (@send (json/encode [TYPE-ID-PREFIX, "event", evt-base-url]))
+           (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:allow-sub"]))
+           (is (subscribed? sess-id (evt-url "allow-sub")))
+           (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:deny-pub"]))
+           (is (subscribed? sess-id (evt-url "deny-pub")))
+           ; permission denied for subscribe
+           (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:deny-sub"]))
+           (is (not (subscribed? sess-id (evt-url "deny-sub"))))
+
+           ; permission allowed for publish
+           (@send (json/encode [TYPE-ID-PUBLISH, "event:allow-sub", "allowed"]))
+           (is (published? sess-id (evt-url "allow-sub") "allowed"))
+           (msg-received? [TYPE-ID-EVENT, (str evt-base-url "allow-sub"), "allowed"])
+           ; permission denied for publish
+           (@send (json/encode [TYPE-ID-PUBLISH, "event:deny-pub", "denied"]))
+           (is (not (published? sess-id (evt-url "deny-sub") "denied")))
+           (msg-received? nil)
+
+           ; send auth request again, expect error
+           (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc3",
+                                URI-WAMP-CALL-AUTHREQ, "username", {:extra "stuff"}]))
+           (msg-received? [TYPE-ID-CALLERROR, "auth-req-rpc3",
+                           "http://api.wamp.ws/error#already-authenticated",
+                           "already authenticated"])
+
+           ; re-send auth
+           (@send (json/encode [TYPE-ID-CALL, "auth-rpc3",
+                                URI-WAMP-CALL-AUTH, (hmac-sha-256 challenge secret)]))
+           (msg-received? [TYPE-ID-CALLERROR, "auth-rpc3",
+                           "http://api.wamp.ws/error#already-authenticated",
+                           "already authenticated"]))
+
+         (@close "close-status")
+         (dosync (is (= {} @client-auth)))
+         ))))
+
+(deftest http-kit-handler-anon-auth-test
+  (let [close (atom nil)
+        send  (atom nil)]
+    (with-redefs-fn
+      {#'httpkit/on-close   (fn [ch cb] (reset! close cb))
+       #'httpkit/on-receive (fn [ch cb] (reset! send cb))
+       #'httpkit/close      (fn [ch]    (@close "forced"))}
+      #(let [sess-id (http-kit-handler client-receive auth-handler-callbacks)]
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+
+         ; send auth request
+         (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc4", URI-WAMP-CALL-AUTHREQ]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-req-rpc4" nil])
+
+         ; send auth
+         (@send (json/encode [TYPE-ID-CALL, "auth-rpc4", URI-WAMP-CALL-AUTH]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc4", (auth-permissions nil nil)])
+
+         (@close "close-status")
+         (dosync (is (= {} @client-auth)))
+         ))))
+
+
+(def auth-timeout-handler-callbacks
+  {:on-close (ws-on-close-cb)
+   :on-auth  {:allow-anon? true
+              :secret      auth-secret
+              :permissions auth-permissions
+              :timeout     50}
+   :on-call  {(rpc-url "add")   +}})
+
+
+(deftest http-kit-handler-auth-timeout-test
+  (let [close (atom nil)
+        send  (atom nil)]
+    (with-redefs-fn
+      {#'httpkit/on-close   (fn [ch cb] (reset! close cb))
+       #'httpkit/on-receive (fn [ch cb] (reset! send cb))
+       #'httpkit/close      (fn [ch]    (@close "forced"))}
+      #(let [sess-id (http-kit-handler client-receive auth-timeout-handler-callbacks)]
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (Thread/sleep 100)
+         ; closed?
+         (is (ws-closed? sess-id "forced"))
+         ))))
+
 
 (deftest origin-match?-test
   (is (origin-match? #"http://test" {:headers {"origin" "http://test"}}))
