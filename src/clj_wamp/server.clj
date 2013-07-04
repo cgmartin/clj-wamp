@@ -321,11 +321,6 @@
             {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
                      :message "authentication key does not exist"}}))))))
 
-(defn cancel-auth-timer [sess-id]
-  (when-let [task (get-in @client-auth [sess-id :timer])]
-    (timer/cancel task)
-    (dosync (alter client-auth dissoc-in [sess-id :timer]))))
-
 (defn create-call-auth
   [perm-cb]
   (fn [& [signature]]
@@ -339,7 +334,6 @@
           (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
             (do
               (dosync (alter client-auth assoc-in [*call-sess-id* :auth?] true))
-              (cancel-auth-timer *call-sess-id*)
               (perm-cb *call-sess-id* auth-key))
             (do
               ; remove previous auth data, must request and authenticate again
@@ -365,7 +359,6 @@
   (when-let [auth-cbs (callbacks :on-auth)]
     (let [timeout-ms (auth-cbs :timeout 20000)
           task       (timer/schedule-task timeout-ms (auth-timeout sess-id))]
-      (dosync (alter client-auth assoc-in [sess-id :timer] task))
       task)))
 
 ;; WAMP PubSub/RPC callbacks
