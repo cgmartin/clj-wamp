@@ -1,4 +1,4 @@
-## 1.0.0-beta4 (2013/?/??)
+## 1.0.0-rc1 (2013/7/5)
  * Feature #3: WAMP-CRA (Challenge-Response Authentication) support.
  * Fix: Origin validation when header is missing, and removed skip
    feature from beta3. Use a different `with-channel` handler

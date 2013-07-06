@@ -40,7 +40,7 @@
 (def ^:const DESC-WAMP-ERROR-NOAUTH   "unauthorized")
 (def ^:const URI-WAMP-ERROR-NOAUTH    (str URI-WAMP-ERROR "unauthorized"))
 
-(def project-version "clj-wamp/1.0.0-beta3")
+(def project-version "clj-wamp/1.0.0-rc1")
 
 (def max-sess-id (atom 0))
 

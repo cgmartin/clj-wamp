@@ -5,8 +5,6 @@ for HTTP Kit servers.
 
 [![Build Status](https://travis-ci.org/cgmartin/clj-wamp.png?branch=master)](https://travis-ci.org/cgmartin/clj-wamp)
 
-**Warning: Immature / In beta**
-
 Visit [cljwamp.us](http://cljwamp.us) for live demos and additional information.
 See [clj-wamp-example](https://github.com/cgmartin/clj-wamp-example) for an example project and source code.
 
@@ -18,7 +16,7 @@ For information on the WAMP specification, visit [wamp.ws](http://wamp.ws).
 
 Add the following dependency to your `project.clj` file:
 ```clojure
-[clj-wamp "1.0.0-beta3"]
+[clj-wamp "1.0.0-rc1"]
 ```
 
 Run clj-wamp's http-kit-handler within http-kit's with-channel context:
@@ -39,7 +37,7 @@ Run clj-wamp's http-kit-handler within http-kit's with-channel context:
   [request]
   (wamp/with-channel-validation request channel origin-re
     (wamp/http-kit-handler channel
-      ; Here be dragons...
+      ; Here be dragons... all are optional
       {:on-open        on-open-fn
        :on-close       on-close-fn
 
@@ -61,7 +59,13 @@ Run clj-wamp's http-kit-handler within http-kit's with-channel context:
                         (evt-url "pub-only") true
                         :on-after            on-publish-fn }
 
-       :on-unsubscribe on-unsubscribe-fn })))
+       :on-unsubscribe on-unsubscribe-fn
+
+       :on-auth        {:allow-anon? true                ; allow anonymous authentication?
+                        :secret      auth-secret-fn      ; lookup the auth key's secret
+                        :permissions auth-permissions-fn ; return the permissions for the key
+                        :timeout     20000}})))          ; close the connection if not auth'd
+
 
 (http-kit/run-server my-wamp-handler {:port 8080})
 ```
