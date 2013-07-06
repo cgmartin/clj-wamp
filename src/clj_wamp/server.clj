@@ -256,21 +256,29 @@
 ;; WAMP-CRA Authentication
 
 (defn hmac-sha-256
+  "Generates a HMAC SHA256 hash."
   [^String key ^String data]
   (let [hmac-key (SecretKeySpec. (.getBytes key) "HmacSHA256")
         hmac     (doto (Mac/getInstance "HmacSHA256") (.init hmac-key))
         result   (.doFinal hmac (.getBytes data))]
     (String. (base64/encode result) "UTF-8")))
 
-(defn auth-challenge [sess-id auth-key auth-secret]
+(defn auth-challenge
+  "Generates a challenge hash which will be used by the client to sign the secret."
+  [sess-id auth-key auth-secret]
   (let [hmac-key (str auth-secret "-" (System/currentTimeMillis) "-" sess-id)]
     (hmac-sha-256 hmac-key auth-key)))
 
-(defn auth-sig-match? [sess-id signature]
+(defn auth-sig-match?
+  "Check whether the client signature matches the server's signature."
+  [sess-id signature]
   (if-let [auth-sig (get-in @client-auth [sess-id :sig])]
     (= signature auth-sig)))
 
-(defn add-client-auth-sig [sess-id auth-key auth-secret challenge]
+(defn add-client-auth-sig
+  "Stores the authorization signature on the server-side for later
+  comparison with the client."
+  [sess-id auth-key auth-secret challenge]
   (let [sig (hmac-sha-256 challenge auth-secret)]
     (dosync
       (alter client-auth assoc sess-id {:sig   sig
@@ -278,21 +286,30 @@
                                         :auth? false}))
     sig))
 
-(defn add-client-auth-anon [sess-id]
+(defn add-client-auth-anon
+  "Stores anonymous client metadata with the session."
+  [sess-id]
   (dosync (alter client-auth assoc sess-id {:key :anon :auth? false})))
 
-(defn client-auth-requested? [sess-id]
+(defn client-auth-requested?
+  "Checks if the authreq call has already occurred."
+  [sess-id]
   (not (nil? (get-in @client-auth [sess-id :key]))))
 
-(defn client-authenticated? [sess-id]
+(defn client-authenticated?
+  "Checks if authentication has already occurred."
+  [sess-id]
   (get-in @client-auth [sess-id :auth?]))
 
-(defn authorized? [sess-id type topic perm-cb]
+(defn authorized?
+  "Checks if the session is authorized for a message type and topic."
+  [sess-id type topic perm-cb]
   (if-let [auth-key (get-in @client-auth [sess-id :key])]
     (let [perms (perm-cb sess-id auth-key)]
       (get-in perms [type topic]))))
 
 (defn create-call-authreq
+  "Creates a callback for the authreq RPC call."
   [allow-anon? secret-cb]
   (fn [& [auth-key extra]]
     (dosync
@@ -320,6 +337,7 @@
                        :message "authentication key does not exist"}})))))))
 
 (defn create-call-auth
+  "Creates a callback for the auth RPC call."
   [perm-cb]
   (fn [& [signature]]
     (dosync
@@ -340,7 +358,9 @@
                 {:error {:uri (str URI-WAMP-ERROR "invalid-signature")
                          :message "signature for authentication request is invalid"}}))))))))
 
-(defn init-cr-auth [callbacks]
+(defn init-cr-auth
+  "Initializes the authorization RPC calls (if configured)."
+  [callbacks]
   (if-let [auth-cbs (callbacks :on-auth)]
     (let [allow-anon? (auth-cbs :allow-anon?)
           secret-cb   (auth-cbs :secret)
@@ -350,11 +370,15 @@
                    URI-WAMP-CALL-AUTH    (create-call-auth perm-cb)}}))
     callbacks))
 
-(defn auth-timeout [sess-id]
+(defn auth-timeout
+  "Closes the session if the client has not authenticated."
+  [sess-id]
   (when-not (client-authenticated? sess-id)
     (close-channel sess-id)))
 
-(defn init-auth-timer [callbacks sess-id]
+(defn init-auth-timer
+  "Starts a timer to ensure authentication, else the session is closed."
+  [callbacks sess-id]
   (when-let [auth-cbs (callbacks :on-auth)]
     (let [timeout-ms (auth-cbs :timeout 20000)
           task       (timer/schedule-task timeout-ms (auth-timeout sess-id))]
