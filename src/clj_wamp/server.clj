@@ -48,7 +48,6 @@
   (swap! max-sess-id inc))
 
 
-
 ;; Client utils
 
 (def client-channels (ref {}))
@@ -67,7 +66,7 @@
   "Returns the channel (or callback function) for a websocket client's
   session id."
   [sess-id]
-  (dosync (get @client-channels sess-id)))
+  (get @client-channels sess-id))
 
 (defn del-client
   "Removes a websocket session from the map of clients."
@@ -91,10 +90,9 @@
   (let [topic (split curi #":")
         prefix (first topic)
         suffix (second topic)]
-    (dosync
-      (if-let [uri (get-in @client-prefixes [sess-id prefix])]
-        (str uri suffix)
-        curi))))
+    (if-let [uri (get-in @client-prefixes [sess-id prefix])]
+      (str uri suffix)
+      curi)))
 
 (defn close-channel
   ([sess-id]
@@ -154,22 +152,22 @@
 
 (defn get-topic-clients [topic]
   "Returns all client session ids within a topic."
-  (dosync
-    (if-let [clients (@topic-clients topic)]
-      (keys clients))))
+  (if-let [clients (@topic-clients topic)]
+    (keys clients)))
 
 ;; WAMP websocket send! utils
 
 (defn- send!
   "Sends data to a websocket client."
   [sess-id & data]
-  (let [channel-or-fn (get-client-channel sess-id)
-        json-data     (json/encode data {:escape-non-ascii true})]
-    (log/trace "Sending data:" data)
-    (if (fn? channel-or-fn) ; application callback?
-      (channel-or-fn data)
-      (when channel-or-fn
-        (httpkit/send! channel-or-fn json-data)))))
+  (dosync
+    (let [channel-or-fn (get-client-channel sess-id)
+          json-data     (json/encode data {:escape-non-ascii true})]
+      (log/trace "Sending data:" data)
+      (if (fn? channel-or-fn) ; application callback?
+        (channel-or-fn data)
+        (when channel-or-fn
+          (httpkit/send! channel-or-fn json-data))))))
 
 (defn send-welcome!
   "Sends a WAMP welcome message to a websocket client.
@@ -199,12 +197,12 @@
   "Sends an event message to all clients in topic.
   [ TYPE_ID_EVENT , topicURI , event ]"
   [topic event]
-    (topic-send! topic TYPE-ID-EVENT topic event))
+  (topic-send! topic TYPE-ID-EVENT topic event))
 
 (defn broadcast-event!
   "Sends an event message to all clients in a topic but those excluded."
   [topic event excludes]
-    (topic-broadcast! topic excludes TYPE-ID-EVENT topic event))
+  (topic-broadcast! topic excludes TYPE-ID-EVENT topic event))
 
 (defn emit-event!
   "Sends an event message to specific clients in a topic"
@@ -274,15 +272,14 @@
 
 (defn add-client-auth-sig [sess-id auth-key auth-secret challenge]
   (let [sig (hmac-sha-256 challenge auth-secret)]
-    (dosync (alter client-auth assoc sess-id
-              {:sig   sig
-               :key   auth-key
-               :auth? false}))
+    (dosync
+      (alter client-auth assoc sess-id {:sig   sig
+                                        :key   auth-key
+                                        :auth? false}))
     sig))
 
 (defn add-client-auth-anon [sess-id]
-  (dosync
-    (alter client-auth assoc sess-id {:key :anon :auth? false})))
+  (dosync (alter client-auth assoc sess-id {:key :anon :auth? false})))
 
 (defn client-auth-requested? [sess-id]
   (not (nil? (get-in @client-auth [sess-id :key]))))
@@ -298,48 +295,50 @@
 (defn create-call-authreq
   [allow-anon? secret-cb]
   (fn [& [auth-key extra]]
-    (if (client-authenticated? *call-sess-id*)
-      {:error {:uri (str URI-WAMP-ERROR "already-authenticated")
-               :message "already authenticated"}}
-      (if (client-auth-requested? *call-sess-id*)
-        {:error {:uri (str URI-WAMP-ERROR "authentication-already-requested")
-                 :message "authentication request already issued - authentication pending"}}
+    (dosync
+      (if (client-authenticated? *call-sess-id*)
+        {:error {:uri (str URI-WAMP-ERROR "already-authenticated")
+                 :message "already authenticated"}}
+        (if (client-auth-requested? *call-sess-id*)
+          {:error {:uri (str URI-WAMP-ERROR "authentication-already-requested")
+                   :message "authentication request already issued - authentication pending"}}
 
-        (if (nil? auth-key)
-          ; Allow anonymous auth?
-          (if-not allow-anon?
-            {:error {:uri (str URI-WAMP-ERROR "anonymous-auth-forbidden")
-                     :message "authentication as anonymous is forbidden"}}
-            (do
-              (add-client-auth-anon *call-sess-id*)
-              nil)) ; return nil
-          ; Non-anonymous auth
-          (if-let [auth-secret (secret-cb *call-sess-id* auth-key extra)]
-            (let [challenge (auth-challenge *call-sess-id* auth-key auth-secret)]
-              (add-client-auth-sig *call-sess-id* auth-key auth-secret challenge)
-              challenge) ; return the challenge
-            {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
-                     :message "authentication key does not exist"}}))))))
+          (if (nil? auth-key)
+            ; Allow anonymous auth?
+            (if-not allow-anon?
+              {:error {:uri (str URI-WAMP-ERROR "anonymous-auth-forbidden")
+                       :message "authentication as anonymous is forbidden"}}
+              (do
+                (add-client-auth-anon *call-sess-id*)
+                nil)) ; return nil
+            ; Non-anonymous auth
+            (if-let [auth-secret (secret-cb *call-sess-id* auth-key extra)]
+              (let [challenge (auth-challenge *call-sess-id* auth-key auth-secret)]
+                (add-client-auth-sig *call-sess-id* auth-key auth-secret challenge)
+                challenge) ; return the challenge
+              {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
+                       :message "authentication key does not exist"}})))))))
 
 (defn create-call-auth
   [perm-cb]
   (fn [& [signature]]
-    (if (client-authenticated? *call-sess-id*)
-      {:error {:uri (str URI-WAMP-ERROR "already-authenticated")
-               :message "already authenticated"}}
-      (if (not (client-auth-requested? *call-sess-id*))
-        {:error {:uri (str URI-WAMP-ERROR "no-authentication-requested")
-                 :message "no authentication previously requested"}}
-        (let [auth-key (get-in @client-auth [*call-sess-id* :key])]
-          (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
-            (do
-              (dosync (alter client-auth assoc-in [*call-sess-id* :auth?] true))
-              (perm-cb *call-sess-id* auth-key))
-            (do
-              ; remove previous auth data, must request and authenticate again
-              (dosync (alter client-auth dissoc *call-sess-id*))
-              {:error {:uri (str URI-WAMP-ERROR "invalid-signature")
-                       :message "signature for authentication request is invalid"}})))))))
+    (dosync
+      (if (client-authenticated? *call-sess-id*)
+        {:error {:uri (str URI-WAMP-ERROR "already-authenticated")
+                 :message "already authenticated"}}
+        (if (not (client-auth-requested? *call-sess-id*))
+          {:error {:uri (str URI-WAMP-ERROR "no-authentication-requested")
+                   :message "no authentication previously requested"}}
+          (let [auth-key (get-in @client-auth [*call-sess-id* :key])]
+            (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
+              (do
+                (alter client-auth assoc-in [*call-sess-id* :auth?] true)
+                (perm-cb *call-sess-id* auth-key))
+              (do
+                ; remove previous auth data, must request and authenticate again
+                (alter client-auth dissoc *call-sess-id*)
+                {:error {:uri (str URI-WAMP-ERROR "invalid-signature")
+                         :message "signature for authentication request is invalid"}}))))))))
 
 (defn init-cr-auth [callbacks]
   (if-let [auth-cbs (callbacks :on-auth)]
@@ -478,8 +477,7 @@
 
         5 ;TYPE-ID-SUBSCRIBE
         (let [topic (get-topic sess-id (first msg-params))]
-          (if (or (nil? perm-cb)
-                  (authorized? sess-id :subscribe topic perm-cb))
+          (if (or (nil? perm-cb) (authorized? sess-id :subscribe topic perm-cb))
             (on-subscribe on-sub-cbs sess-id topic)))
 
         6 ;TYPE-ID-UNSUBSCRIBE
@@ -492,8 +490,7 @@
         7 ;TYPE-ID-PUBLISH
         (let [[topic-uri event & pub-args] msg-params
               topic (get-topic sess-id topic-uri)]
-          (if (or (nil? perm-cb)
-                (authorized? sess-id :publish topic perm-cb))
+          (if (or (nil? perm-cb) (authorized? sess-id :publish topic perm-cb))
             (apply on-publish on-pub-cbs sess-id topic event pub-args)))
 
         ; default: Unknown message type
