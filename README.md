@@ -1,20 +1,27 @@
 # clj-wamp
 
-Clojure implementation of the WebSocket Application Messaging Protocol,
+A Clojure implementation of the WebSocket Application Messaging Protocol,
 for HTTP Kit servers.
+
+Provides hooks for common WebSocket messaging patterns and error handling (RPC, PubSub, and Authentication).
 
 [![Build Status](https://travis-ci.org/cgmartin/clj-wamp.png?branch=master)](https://travis-ci.org/cgmartin/clj-wamp)
 
 Visit [cljwamp.us](http://cljwamp.us) for live demos and additional information.
 See [clj-wamp-example](https://github.com/cgmartin/clj-wamp-example) for an example project and source code.
 
-For information on HTTP Kit, a Ring-compatible HTTP server for Clojure, visit [http-kit.org](http://http-kit.org/).
+For information on **HTTP Kit**, a Ring-compatible HTTP server for Clojure, visit [http-kit.org](http://http-kit.org/).
 
-For information on the WAMP specification, visit [wamp.ws](http://wamp.ws).
+For information on the **WAMP specification**, visit [wamp.ws](http://wamp.ws).
 
 ## Usage
 
-Add the following dependency to your `project.clj` file:
+Create a new starter project with clj-wamp and HTTP Kit:
+```bash
+lein new clj-wamp my-project
+```
+
+...or add the following dependency to your existing `project.clj` file:
 ```clojure
 [clj-wamp "1.0.0-rc1"]
 ```
@@ -70,7 +77,7 @@ Run clj-wamp's http-kit-handler within http-kit's with-channel context:
 (http-kit/run-server my-wamp-handler {:port 8080})
 ```
 
-See [the docs](http://cljwamp.us/doc/index.html) for more information on the PubSub API and callback signatures.
+See [the docs](http://cljwamp.us/doc/index.html) for more information on the API and callback signatures.
 
 ## Change Log
 

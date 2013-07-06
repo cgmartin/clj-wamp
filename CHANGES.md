@@ -1,8 +1,10 @@
-## 1.0.0-rc1 (2013/7/5)
+## 1.0.0-rc1 (2013/7/6)
  * Feature #3: WAMP-CRA (Challenge-Response Authentication) support.
- * Fix: Origin validation when header is missing, and removed skip
-   feature from beta3. Use a different `with-channel` handler
-   if the proxy cannot be configured to send back Protocol/Origin headers.
+   See API docs or `lein new clj-wamp wampproj` for example.
+ * Fix: Perform origin validation when header is missing.
+ * Fix: Removed origin validation skip feature from beta3. If your
+   proxy cannot be configured to send back Protocol/Origin headers,
+   please use a different `with-channel` handler.
 
 ## 1.0.0-beta3 (2013/6/27)
  * Fix: Allow skipping the origin validation for proxies that don't send
