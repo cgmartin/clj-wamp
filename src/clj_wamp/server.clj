@@ -264,18 +264,18 @@
     (String. (base64/encode result) "UTF-8")))
 
 (defn auth-challenge
-  "Generates a challenge hash which will be used by the client to sign the secret."
+  "Generates a challenge hash used by the client to sign the secret."
   [sess-id auth-key auth-secret]
   (let [hmac-key (str auth-secret "-" (System/currentTimeMillis) "-" sess-id)]
     (hmac-sha-256 hmac-key auth-key)))
 
-(defn auth-sig-match?
+(defn- auth-sig-match?
   "Check whether the client signature matches the server's signature."
   [sess-id signature]
   (if-let [auth-sig (get-in @client-auth [sess-id :sig])]
     (= signature auth-sig)))
 
-(defn add-client-auth-sig
+(defn- add-client-auth-sig
   "Stores the authorization signature on the server-side for later
   comparison with the client."
   [sess-id auth-key auth-secret challenge]
@@ -286,7 +286,7 @@
                                         :auth? false}))
     sig))
 
-(defn add-client-auth-anon
+(defn- add-client-auth-anon
   "Stores anonymous client metadata with the session."
   [sess-id]
   (dosync (alter client-auth assoc sess-id {:key :anon :auth? false})))
@@ -297,7 +297,7 @@
   (not (nil? (get-in @client-auth [sess-id :key]))))
 
 (defn client-authenticated?
-  "Checks if authentication has already occurred."
+  "Checks if authentication has occurred."
   [sess-id]
   (get-in @client-auth [sess-id :auth?]))
 
@@ -308,7 +308,7 @@
     (let [perms (perm-cb sess-id auth-key)]
       (get-in perms [type topic]))))
 
-(defn create-call-authreq
+(defn- create-call-authreq
   "Creates a callback for the authreq RPC call."
   [allow-anon? secret-cb]
   (fn [& [auth-key extra]]
@@ -336,7 +336,7 @@
               {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
                        :message "authentication key does not exist"}})))))))
 
-(defn create-call-auth
+(defn- create-call-auth
   "Creates a callback for the auth RPC call."
   [perm-cb]
   (fn [& [signature]]
@@ -358,7 +358,7 @@
                 {:error {:uri (str URI-WAMP-ERROR "invalid-signature")
                          :message "signature for authentication request is invalid"}}))))))))
 
-(defn init-cr-auth
+(defn- init-cr-auth
   "Initializes the authorization RPC calls (if configured)."
   [callbacks]
   (if-let [auth-cbs (callbacks :on-auth)]
@@ -370,13 +370,13 @@
                    URI-WAMP-CALL-AUTH    (create-call-auth perm-cb)}}))
     callbacks))
 
-(defn auth-timeout
+(defn- auth-timeout
   "Closes the session if the client has not authenticated."
   [sess-id]
   (when-not (client-authenticated? sess-id)
     (close-channel sess-id)))
 
-(defn init-auth-timer
+(defn- init-auth-timer
   "Starts a timer to ensure authentication, else the session is closed."
   [callbacks sess-id]
   (when-let [auth-cbs (callbacks :on-auth)]
@@ -534,8 +534,8 @@
           {:on-open        on-open-fn
            :on-close       on-close-fn
 
-           :on-auth        {:allow-anon?     false ; allow anonymous authentication?
-                            :timeout         20000 ; default is 20 secs
+           :on-auth        {:allow-anon?     false         ; allow anonymous authentication?
+                            :timeout         20000         ; default is 20 secs
                             :secret          auth-secret-fn
                             :permissions     auth-permissions-fn}
 
