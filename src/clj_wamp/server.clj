@@ -301,14 +301,22 @@
   [sess-id]
   (get-in @client-auth [sess-id :auth?]))
 
+(defn- permission?
+  "Checks if a topic and category has permissions in a permission map.
+    {:all true} ; or
+    {:rpc true} ; or
+    {:rpc {\"http://mytopic\" true}"
+  [perms category topic]
+  (or (get perms :all)
+    (true? (get perms category))
+    (get-in perms [category topic])))
+
 (defn authorized?
-  "Checks if the session is authorized for a message type and topic."
-  [sess-id wamptype topic perm-cb]
+  "Checks if the session is authorized for a message category and topic."
+  [sess-id category topic perm-cb]
   (if-let [auth-key (get-in @client-auth [sess-id :key])]
     (let [perms (perm-cb sess-id auth-key)]
-      (or (get perms :all)
-        (true? (get perms wamptype))
-        (get-in perms [wamptype topic])))))
+      (permission? perms category topic))))
 
 (defn- create-call-authreq
   "Creates a callback for the authreq RPC call."
@@ -350,9 +358,7 @@
          (into {}
            (remove nil?
              (for [[topic _] (get wamp-cbs wamp-key)]
-               (if (or (get perms :all)
-                     (true? (get perms perm-key))
-                     (get-in perms [perm-key topic]))
+               (if (permission? perms perm-key topic)
                  {topic true}))))}))))
 
 (defn- create-call-auth
