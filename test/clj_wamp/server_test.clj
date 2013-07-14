@@ -244,7 +244,6 @@
   (is (= msg (last-client-msg))))
 
 
-
 ;; topic base urls
 
 (def rpc-base-url "http://example.com/api#")
@@ -252,6 +251,10 @@
 
 (defn rpc-url [path] (str rpc-base-url path))
 (defn evt-url [path] (str evt-base-url path))
+
+
+;; Base Functionality Tests
+;; ========================
 
 (def test-handler-callbacks
   {:on-open  (ws-on-open-cb)
@@ -402,7 +405,9 @@
          (dosync (is (= {} @topic-clients)))
          ))))
 
-;; cr-auth handlers
+
+;; CR-Auth Tests
+;; =============
 
 (defn auth-secret [sess-id auth-key extra] "secret")
 (defn auth-permissions [sess-id auth-key]
@@ -522,12 +527,197 @@
 
          ; send auth
          (@send (json/encode [TYPE-ID-CALL, "auth-rpc4", URI-WAMP-CALL-AUTH]))
-         (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc4", (auth-permissions nil nil)])
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc4", {:rpc       {(rpc-url "add")   true}
+                                                           :subscribe {(evt-url "allow-sub") true
+                                                                       (evt-url "deny-pub")  true}
+                                                           :publish   {(evt-url "allow-sub") true}}])
 
          (@close "close-status")
          (dosync (is (= {} @client-auth)))
          ))))
 
+
+
+;; Auth Permissions Shorthand Tests
+;; ================================
+
+(defn auth-all-permissions [sess-id auth-key]
+  {:all true})
+
+(defn auth-short-permissions [sess-id auth-key]
+  {:rpc       true
+   :subscribe true
+   :publish   false})
+
+(defn auth-some-permissions [sess-id auth-key]
+  {:rpc       true
+   :subscribe {(evt-url "pubsub1") true}
+   :publish   false})
+
+(def auth-all-perm-handler-callbacks
+  {:on-auth      {:allow-anon? true
+                  :secret      auth-secret
+                  :permissions auth-all-permissions}
+   :on-call      {(rpc-url "rpc1")    +
+                  (rpc-url "rpc2")    -}
+   :on-subscribe {(evt-url "pubsub1") on-sub?
+                  (evt-url "pubsub2") on-sub?}
+   :on-publish   {(evt-url "pubsub1") on-pub
+                  (evt-url "pubsub2") on-pub}})
+
+(def auth-short-perm-handler-callbacks
+  (assoc-in auth-all-perm-handler-callbacks [:on-auth :permissions] auth-short-permissions))
+
+(def auth-some-perm-handler-callbacks
+  (assoc-in auth-all-perm-handler-callbacks [:on-auth :permissions] auth-some-permissions))
+
+(deftest http-kit-handler-all-auth-test
+  (let [close (atom nil)
+        send  (atom nil)]
+    (with-redefs-fn
+      {#'httpkit/on-close   (fn [ch cb] (reset! close cb))
+       #'httpkit/on-receive (fn [ch cb] (reset! send cb))
+       #'httpkit/close      (fn [ch]    (@close "forced"))}
+      #(let [sess-id (http-kit-handler client-receive auth-all-perm-handler-callbacks)]
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+
+         ; send auth request
+         (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc5", URI-WAMP-CALL-AUTHREQ]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-req-rpc5" nil])
+
+         ; send auth
+         (@send (json/encode [TYPE-ID-CALL, "auth-rpc5", URI-WAMP-CALL-AUTH]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc5", {:rpc       {(rpc-url "rpc1")    true
+                                                                       (rpc-url "rpc2")    true}
+                                                           :subscribe {(evt-url "pubsub1") true
+                                                                       (evt-url "pubsub2") true}
+                                                           :publish   {(evt-url "pubsub1") true
+                                                                       (evt-url "pubsub2") true}}])
+
+         ; permission allowed for RPC
+         (@send (json/encode [TYPE-ID-PREFIX, "api", rpc-base-url]))
+         (@send (json/encode [TYPE-ID-CALL, "add-rpc", "api:rpc1", 23, 99]))
+         (msg-received? [TYPE-ID-CALLRESULT, "add-rpc", 122])
+         (@send (json/encode [TYPE-ID-CALL, "sub-rpc", "api:rpc2", 122, 99]))
+         (msg-received? [TYPE-ID-CALLRESULT, "sub-rpc", 23])
+
+         ; permission allowed for Subscribe
+         (@send (json/encode [TYPE-ID-PREFIX, "event", evt-base-url]))
+         (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:pubsub1"]))
+         (is (subscribed? sess-id (evt-url "pubsub1")))
+         (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:pubsub2"]))
+         (is (subscribed? sess-id (evt-url "pubsub2")))
+
+         ; permission allowed for publish
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:pubsub1", "allowed"]))
+         (is (published? sess-id (evt-url "pubsub1") "allowed"))
+         (msg-received? [TYPE-ID-EVENT, (str evt-base-url "pubsub1"), "allowed"])
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:pubsub2", "allowed"]))
+         (is (published? sess-id (evt-url "pubsub2") "allowed"))
+         (msg-received? [TYPE-ID-EVENT, (str evt-base-url "pubsub2"), "allowed"])
+
+         (@close "close-status")
+         (dosync (is (= {} @client-auth)))
+         ))))
+
+(deftest http-kit-handler-short-auth-test
+  (let [close (atom nil)
+        send  (atom nil)]
+    (with-redefs-fn
+      {#'httpkit/on-close   (fn [ch cb] (reset! close cb))
+       #'httpkit/on-receive (fn [ch cb] (reset! send cb))
+       #'httpkit/close      (fn [ch]    (@close "forced"))}
+      #(let [sess-id (http-kit-handler client-receive auth-short-perm-handler-callbacks)]
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+
+         ; send auth request
+         (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc5", URI-WAMP-CALL-AUTHREQ]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-req-rpc5" nil])
+
+         ; send auth
+         (@send (json/encode [TYPE-ID-CALL, "auth-rpc5", URI-WAMP-CALL-AUTH]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc5", {:rpc       {(rpc-url "rpc1")    true
+                                                                       (rpc-url "rpc2")    true}
+                                                           :subscribe {(evt-url "pubsub1") true
+                                                                       (evt-url "pubsub2") true}
+                                                           :publish   {}}])
+
+         ; permission allowed for RPC
+         (@send (json/encode [TYPE-ID-PREFIX, "api", rpc-base-url]))
+         (@send (json/encode [TYPE-ID-CALL, "add-rpc", "api:rpc1", 23, 99]))
+         (msg-received? [TYPE-ID-CALLRESULT, "add-rpc", 122])
+         (@send (json/encode [TYPE-ID-CALL, "sub-rpc", "api:rpc2", 122, 99]))
+         (msg-received? [TYPE-ID-CALLRESULT, "sub-rpc", 23])
+
+         ; permission allowed for Subscribe
+         (@send (json/encode [TYPE-ID-PREFIX, "event", evt-base-url]))
+         (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:pubsub1"]))
+         (is (subscribed? sess-id (evt-url "pubsub1")))
+         (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:pubsub2"]))
+         (is (subscribed? sess-id (evt-url "pubsub2")))
+
+         ; permission denied for publish
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:pubsub1", "denied"]))
+         (is (not (published? sess-id (evt-url "pubsub1") "denied")))
+         (msg-received? nil)
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:pubsub2", "denied"]))
+         (is (not (published? sess-id (evt-url "pubsub2") "denied")))
+         (msg-received? nil)
+
+         (@close "close-status")
+         (dosync (is (= {} @client-auth)))
+         ))))
+
+(deftest http-kit-handler-some-auth-test
+  (let [close (atom nil)
+        send  (atom nil)]
+    (with-redefs-fn
+      {#'httpkit/on-close   (fn [ch cb] (reset! close cb))
+       #'httpkit/on-receive (fn [ch cb] (reset! send cb))
+       #'httpkit/close      (fn [ch]    (@close "forced"))}
+      #(let [sess-id (http-kit-handler client-receive auth-some-perm-handler-callbacks)]
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+
+         ; send auth request
+         (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc5", URI-WAMP-CALL-AUTHREQ]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-req-rpc5" nil])
+
+         ; send auth
+         (@send (json/encode [TYPE-ID-CALL, "auth-rpc5", URI-WAMP-CALL-AUTH]))
+         (msg-received? [TYPE-ID-CALLRESULT, "auth-rpc5", {:rpc       {(rpc-url "rpc1")    true
+                                                                       (rpc-url "rpc2")    true}
+                                                           :subscribe {(evt-url "pubsub1") true}
+                                                           :publish   {}}])
+
+         ; permission allowed for RPC
+         (@send (json/encode [TYPE-ID-PREFIX, "api", rpc-base-url]))
+         (@send (json/encode [TYPE-ID-CALL, "add-rpc", "api:rpc1", 23, 99]))
+         (msg-received? [TYPE-ID-CALLRESULT, "add-rpc", 122])
+         (@send (json/encode [TYPE-ID-CALL, "sub-rpc", "api:rpc2", 122, 99]))
+         (msg-received? [TYPE-ID-CALLRESULT, "sub-rpc", 23])
+
+         ; permission allowed for Subscribe
+         (@send (json/encode [TYPE-ID-PREFIX, "event", evt-base-url]))
+         (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:pubsub1"]))
+         (is (subscribed? sess-id (evt-url "pubsub1")))
+         ; permission denied for subscribe
+         (@send (json/encode [TYPE-ID-SUBSCRIBE, "event:pubsub2"]))
+         (is (not (subscribed? sess-id (evt-url "pubsub2"))))
+
+         ; permission denied for publish
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:pubsub1", "denied"]))
+         (is (not (published? sess-id (evt-url "pubsub1") "denied")))
+         (msg-received? nil)
+         (@send (json/encode [TYPE-ID-PUBLISH, "event:pubsub2", "denied"]))
+         (is (not (published? sess-id (evt-url "pubsub2") "denied")))
+         (msg-received? nil)
+
+         (@close "close-status")
+         (dosync (is (= {} @client-auth)))
+         ))))
+
+;; Auth Timeout Tests
+;; ==================
 
 (def auth-timeout-handler-callbacks
   {:on-close (ws-on-close-cb)
@@ -552,6 +742,9 @@
          (is (ws-closed? sess-id "forced"))
          ))))
 
+
+;; Handshake Validation Tests
+;; ==========================
 
 (deftest origin-match?-test
   (is (origin-match? #"http://test" {:headers {"origin" "http://test"}}))

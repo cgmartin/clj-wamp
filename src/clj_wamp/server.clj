@@ -303,10 +303,12 @@
 
 (defn authorized?
   "Checks if the session is authorized for a message type and topic."
-  [sess-id type topic perm-cb]
+  [sess-id wamptype topic perm-cb]
   (if-let [auth-key (get-in @client-auth [sess-id :key])]
     (let [perms (perm-cb sess-id auth-key)]
-      (get-in perms [type topic]))))
+      (or (get perms :all)
+        (true? (get perms wamptype))
+        (get-in perms [wamptype topic])))))
 
 (defn- create-call-authreq
   "Creates a callback for the authreq RPC call."
@@ -336,9 +338,26 @@
               {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
                        :message "authentication key does not exist"}})))))))
 
+(defn- expand-auth-perms
+  "Expands shorthand permission maps into full topic permissions."
+  [perms wamp-cbs]
+  (let [wamp-perm-keys {:on-call      :rpc,
+                        :on-subscribe :subscribe,
+                        :on-publish   :publish}]
+    (reduce conj
+      (for [[wamp-key perm-key] wamp-perm-keys]
+        {perm-key
+         (into {}
+           (remove nil?
+             (for [[topic _] (get wamp-cbs wamp-key)]
+               (if (or (get perms :all)
+                     (true? (get perms perm-key))
+                     (get-in perms [perm-key topic]))
+                 {topic true}))))}))))
+
 (defn- create-call-auth
   "Creates a callback for the auth RPC call."
-  [perm-cb]
+  [perm-cb wamp-cbs]
   (fn [& [signature]]
     (dosync
       (if (client-authenticated? *call-sess-id*)
@@ -351,7 +370,7 @@
             (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
               (do
                 (alter client-auth assoc-in [*call-sess-id* :auth?] true)
-                (perm-cb *call-sess-id* auth-key))
+                (expand-auth-perms (perm-cb *call-sess-id* auth-key) wamp-cbs))
               (do
                 ; remove previous auth data, must request and authenticate again
                 (alter client-auth dissoc *call-sess-id*)
@@ -367,7 +386,7 @@
           perm-cb     (auth-cbs :permissions)]
       (merge-with merge callbacks
         {:on-call {URI-WAMP-CALL-AUTHREQ (create-call-authreq allow-anon? secret-cb)
-                   URI-WAMP-CALL-AUTH    (create-call-auth perm-cb)}}))
+                   URI-WAMP-CALL-AUTH    (create-call-auth perm-cb callbacks)}}))
     callbacks))
 
 (defn- auth-timeout
@@ -580,6 +599,16 @@
          :subscribe {\"http://example/event#allow\" true
                      \"http://example/event#deny\"  false}
          :publish   {\"http://example/event#allow\" true}}
+
+      ...or you can allow all category topics:
+
+        {:all true}
+
+      ...or allow/deny all topics within a category:
+
+        {:rpc       true
+         :subscribe false
+         :publish   true}
 
     (rpc-call ...)
       Can have any signature. The parameters received from the client will be applied as-is.
