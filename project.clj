@@ -1,4 +1,4 @@
-(defproject clj-wamp "1.0.0-rc1"
+(defproject clj-wamp "1.0.0"
   :description "The WebSocket Application Messaging Protocol for Clojure"
   :url "https://github.com/cgmartin/clj-wamp"
   :license {:name "Eclipse Public License"

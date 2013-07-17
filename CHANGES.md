@@ -1,4 +1,4 @@
-## 1.0.0
+## 1.0.0 (2013/7/17)
  * Feature #7: Permissions can be allowed in bulk for all topics, or
    per topic category.
  * Feature: Allow authorization timeout to be disabled when set to `0`.
