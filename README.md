@@ -69,8 +69,8 @@ Run clj-wamp's http-kit-handler within http-kit's with-channel context:
        :on-unsubscribe on-unsubscribe-fn
 
        :on-auth        {:allow-anon? true                ; allow anonymous authentication?
-                        :secret      auth-secret-fn      ; lookup the auth key's secret
-                        :permissions auth-permissions-fn ; return the permissions for the key
+                        :secret      auth-secret-fn      ; retrieve the auth key's secret
+                        :permissions auth-permissions-fn ; return the permissions for a key
                         :timeout     20000}})))          ; close the connection if not auth'd
 
 

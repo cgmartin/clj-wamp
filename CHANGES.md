@@ -1,3 +1,8 @@
+## 1.0.0
+ * Feature #7: Permissions can be allowed in bulk for all topics, or
+   per topic category.
+ * Feature: Allow authorization timeout to be disabled when set to `0`.
+
 ## 1.0.0-rc1 (2013/7/6)
  * Feature #3: WAMP-CRA (Challenge-Response Authentication) support.
    See API docs or `lein new clj-wamp wampproj` for example.

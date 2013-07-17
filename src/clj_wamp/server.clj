@@ -402,12 +402,14 @@
     (close-channel sess-id)))
 
 (defn- init-auth-timer
-  "Starts a timer to ensure authentication, else the session is closed."
+  "Ensure authentication occurs within a certain time period or else
+  force close the session. Default timeout is 20000 ms (20 sec).
+  Set timeout to 0 to disable."
   [callbacks sess-id]
   (when-let [auth-cbs (callbacks :on-auth)]
-    (let [timeout-ms (auth-cbs :timeout 20000)
-          task       (timer/schedule-task timeout-ms (auth-timeout sess-id))]
-      task)))
+    (let [timeout-ms (auth-cbs :timeout 20000)]
+      (if (> timeout-ms 0)
+        (timer/schedule-task timeout-ms (auth-timeout sess-id))))))
 
 ;; WAMP PubSub/RPC callbacks
 
@@ -560,7 +562,8 @@
            :on-close       on-close-fn
 
            :on-auth        {:allow-anon?     false         ; allow anonymous authentication?
-                            :timeout         20000         ; default is 20 secs
+                            :timeout         20000         ; close connection if not authenticated
+                                                           ; (default 20 secs)
                             :secret          auth-secret-fn
                             :permissions     auth-permissions-fn}
 
@@ -682,8 +685,8 @@
         (split protocols #",")))))
 
 (defmacro with-channel-validation
-  "Replaces HTTP Kit with-channel macro to do extra validation
-  for the wamp subprotocol and allowed origin URLs.
+  "Replaces the HTTP Kit `with-channel` macro. Does extra validation
+  to match the wamp subprotocol and origin URL matching.
 
   Example usage:
 
