@@ -83,6 +83,10 @@ See [the docs](http://cljwamp.us/doc/index.html) for more information on the API
 
 [CHANGES.md](https://github.com/cgmartin/clj-wamp/blob/master/CHANGES.md)
 
+## Contributions
+
+Pull requests are most welcome!
+
 ## License
 
 Copyright © 2013 Christopher Martin
