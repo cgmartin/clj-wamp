@@ -47,6 +47,10 @@
 (defn- next-sess-id []
   (swap! max-sess-id inc))
 
+(defn gen-sess-id
+  "Generates a unique session id."
+  []
+  (str (System/currentTimeMillis) "-" (next-sess-id)))
 
 ;; Client utils
 
@@ -55,12 +59,10 @@
 (def client-auth     (ref {}))
 
 (defn add-client
-  "Adds a websocket channel (or callback function) to a map of clients
-  and returns a unique session id."
-  [channel-or-fn]
-  (let [sess-id (str (System/currentTimeMillis) "-" (next-sess-id))]
-    (dosync (alter client-channels assoc sess-id channel-or-fn))
-    sess-id))
+  "Adds a websocket channel (or callback function) to a map of clients,
+   referenced by session id."
+  [sess-id channel-or-fn]
+  (dosync (alter client-channels assoc sess-id channel-or-fn)))
 
 (defn get-client-channel
   "Returns the channel (or callback function) for a websocket client's
@@ -558,7 +560,8 @@
       (if-not (:websocket? req)
         (http-kit/close channel)
         (http-kit-handler channel
-          {:on-open        on-open-fn
+          {:sess-id        \"1234567890\"                    ; custom unique session id
+           :on-open        on-open-fn
            :on-close       on-close-fn
 
            :on-auth        {:allow-anon?     false         ; allow anonymous authentication?
@@ -656,7 +659,8 @@
   [channel callbacks-map]
   (let [callbacks-map (init-cr-auth callbacks-map)
         cb-on-open    (callbacks-map :on-open)
-        sess-id       (add-client channel)]
+        sess-id       (or (callbacks-map :sess-id) (gen-sess-id))]
+    (add-client sess-id channel)
     (httpkit/on-close channel   (on-close sess-id
                                   (callbacks-map :on-close)
                                   (callbacks-map :on-unsubscribe)))
