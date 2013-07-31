@@ -13,28 +13,23 @@
                  [org.clojure/tools.logging "0.2.6"]
                  [org.clojure/data.codec "0.1.0"]
                  [http-kit "2.1.5"]
-                 [cheshire "5.2.0"]]
-  :cljsbuild {:repl-listen-port 9000
-              :repl-launch-commands {"firefox" ["firefox"
-                                                :stdout "target/repl-firefox-out"
-                                                :stderr "target/repl-firefox-err"]
-                                     "phantom" ["phantomjs"
-                                                "phantom/repl.js"
-                                                :stdout "target/repl-phantom-out"
-                                                :stderr "target/repl-phantom-err"]}
-              :test-commands {"unit" ["phantomjs"
-                                      "phantom/unit-test.js"
-                                      "resources/private/html/unit-test.html"]}
-              :builds {:dev {:source-paths ["src/cljs"]
-                             :jar true
-                             :compiler {:optimizations :whitespace
-                                        :pretty-print true
-                                        :output-to "target/clj-wamp.js"}}
-                       :test {:source-paths ["test/cljs"]
-                              :jar true
-                              :compiler {:optimizations :whitespace
-                                         :pretty-print true
-                                         :output-to "resources/private/js/unit-test.js"}}}}
+                 [cheshire "5.2.0"]
+                 [com.cemerick/clojurescript.test "0.0.4"]]
+  :cljsbuild {:builds [{:source-paths ["src/cljs" "test/cljs"]
+                        :compiler {:optimizations :whitespace
+                                   :pretty-print true
+                                   :output-to "target/cljs/whitespace.js"}}
+                       {:source-paths ["src/cljs" "test/cljs"]
+                        :compiler {:optimizations :simple
+                                   :pretty-print true
+                                   :output-to "target/cljs/simple.js"}}
+                       {:source-paths ["src/cljs" "test/cljs"]
+                        :compiler {:optimizations :advanced
+                                   :pretty-print true
+                                   :output-to "target/cljs/advanced.js"}}]
+              :test-commands {"phantom-whitespace" ["runners/phantomjs.js" "target/cljs/whitespace.js"]
+                              "phantom-simple"     ["runners/phantomjs.js" "target/cljs/simple.js"]
+                              "phantom-advanced"   ["runners/phantomjs.js" "target/cljs/advanced.js"]}}
   :profiles {:1.4 {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :dev {:dependencies [[log4j "1.2.17" :exclusions [javax.mail/mail
                                                                javax.jms/jms
