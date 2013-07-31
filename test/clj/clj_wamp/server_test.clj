@@ -737,7 +737,7 @@
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-timeout-handler-callbacks)]
          (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
-         (Thread/sleep 100)
+         (Thread/sleep 200)
          ; closed?
          (is (ws-closed? sess-id "forced"))
          ))))
