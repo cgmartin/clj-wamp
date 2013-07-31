@@ -12,13 +12,13 @@
     (let [ws (websocket/client \"ws://host:port/path\"
             {:protocol \"optional\"
              :on-open (fn [ws]
-                        (println \"connected\"))
-             :on-close (fn [ws code reason]
-                        (println \"closed\" code reason))
+                        (.log js/console \"connected\"))
+             :on-close (fn []
+                        (.log js/console \"closed\"))
              :on-message (fn [ws data]
-                           (println \"got data:\" data))})]
+                           (.log js/console \"got data:\" data))})]
        (websocket/send! ws \"my message\")
-       (websocket/close! ws 1006 \"normal exit\"))"
+       (websocket/close! ws))"
   [uri & [{:keys [protocol on-open on-close on-message on-error
                   reconnect? reconnect-ms]
            :or {reconnect? true}}]]
@@ -36,7 +36,7 @@
     (when on-error
       (.listen handler ws websocket-event/ERROR on-error))
     (when on-close
-      (.listen handler ws websocket-event/CLOSED #(on-close))) ; TODO get code & reason
+      (.listen handler ws websocket-event/CLOSED #(on-close %))) ; TODO get code & reason
     ; Connect to websocket server
     (.open ws uri protocol)
     ws))

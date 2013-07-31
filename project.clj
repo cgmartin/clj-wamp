@@ -15,7 +15,9 @@
                  [http-kit "2.1.5"]
                  [cheshire "5.2.0"]
                  [com.cemerick/clojurescript.test "0.0.4"]]
-  :cljsbuild {:builds [{:source-paths ["src/cljs" "test/cljs"]
+  :cljsbuild {:builds [{:source-paths ["src/cljs"]
+                        :jar true}
+                       {:source-paths ["src/cljs" "test/cljs"]
                         :compiler {:optimizations :whitespace
                                    :pretty-print true
                                    :output-to "target/cljs/whitespace.js"}}
