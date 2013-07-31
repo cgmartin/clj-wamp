@@ -1,4 +1,5 @@
 ## 1.1.0 (2013/?/?)
+ * Feature #4: ClojureScript WAMP client.
  * Feature #8: Allow client session id to be specified. If not
    specified, auto-generate one.
 
