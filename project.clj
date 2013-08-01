@@ -28,10 +28,12 @@
                        {:source-paths ["src/cljs" "test/cljs"]
                         :compiler {:optimizations :advanced
                                    :pretty-print true
-                                   :output-to "target/cljs/advanced.js"}}]
+                                   :output-to "target/cljs/advanced.js"}}
+                       ]
               :test-commands {"phantom-whitespace" ["runners/phantomjs.js" "target/cljs/whitespace.js"]
                               "phantom-simple"     ["runners/phantomjs.js" "target/cljs/simple.js"]
-                              "phantom-advanced"   ["runners/phantomjs.js" "target/cljs/advanced.js"]}}
+                              "phantom-advanced"   ["runners/phantomjs.js" "target/cljs/advanced.js"]
+                              }}
   :profiles {:1.4 {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :dev {:dependencies [[log4j "1.2.17" :exclusions [javax.mail/mail
                                                                javax.jms/jms

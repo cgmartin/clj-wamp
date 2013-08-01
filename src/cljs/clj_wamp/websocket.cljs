@@ -30,13 +30,13 @@
     (when on-message
       (.listen handler ws websocket-event/MESSAGE
         #(let [payload (trim (.-message %))]
-           (.log js/console "RCV" payload)
+           ;(.log js/console "RCV" payload)
            (when (not (blank? payload))
              (on-message ws payload)))))
     (when on-error
       (.listen handler ws websocket-event/ERROR on-error))
     (when on-close
-      (.listen handler ws websocket-event/CLOSED #(on-close %))) ; TODO get code & reason
+      (.listen handler ws websocket-event/CLOSED #(on-close)))
     ; Connect to websocket server
     (.open ws uri protocol)
     ws))
@@ -49,5 +49,5 @@
 (defn send!
   "Sends a message to server"
   [ws msg]
-  (.log js/console "SND" msg)
+  ;(.log js/console "SND" msg)
   (.send ws msg))

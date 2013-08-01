@@ -53,7 +53,7 @@
 (defn- on-message
   [ws data on-open on-event]
   (let [msg (js->clj (JSON/parse data))]
-    (.log js/console "WAMP message" (pr-str msg))
+    ;(.log js/console "WAMP message" (pr-str msg))
     (condp = (first msg)
       TYPE-ID-WELCOME
       ; don't start until Welcome message received
@@ -70,20 +70,22 @@
       (let [call-id  (second msg)
             err-info (drop 2 msg)]
         (when-let [rpc-cb (get @rpc-callbacks call-id)]
-          (rpc-cb ws true err-info)
+          (rpc-cb ws false err-info)
           (swap! rpc-callbacks dissoc call-id)))
 
       TYPE-ID-EVENT
       (let [topic (second msg)
             event (last msg)]
-        (on-event ws topic msg))
+        (on-event ws topic event))
 
       (.log js/console "Unknown message" data))))
 
 (defn wamp-handler
-  [uri & [{:keys [on-open on-close on-event reconnect? reconnect-ms]
-           :or {reconnect? true}}]]
-  (websocket/client uri
+  [uri & [{:keys [on-open on-close on-event websocket-client
+                  reconnect? reconnect-ms]
+           :or {reconnect? true
+                websocket-client websocket/client}}]]
+  (websocket-client uri
     {:reconnect? reconnect? :reconnect-ms reconnect-ms
      :on-message (fn [ws data] (on-message ws data on-open on-event))
      :on-close   on-close
