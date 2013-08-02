@@ -13,29 +13,32 @@
                  [org.clojure/tools.logging "0.2.6"]
                  [org.clojure/data.codec "0.1.0"]
                  [http-kit "2.1.5"]
-                 [cheshire "5.2.0"]
-                 [com.cemerick/clojurescript.test "0.0.4"]]
+                 [cheshire "5.2.0"]]
   :cljsbuild {:builds [{:source-paths ["src/cljs"]
-                        :jar true}
+                        :jar true
+                        :compiler {:output-to "target/cljs/cljwamp.js"}}
                        {:source-paths ["src/cljs" "test/cljs"]
                         :compiler {:optimizations :whitespace
                                    :pretty-print true
-                                   :output-to "target/cljs/whitespace.js"}}
+                                   :output-to "target/cljs/whitespace-test.js"}}
                        {:source-paths ["src/cljs" "test/cljs"]
                         :compiler {:optimizations :simple
                                    :pretty-print true
-                                   :output-to "target/cljs/simple.js"}}
+                                   :output-to "target/cljs/simple-test.js"}}
                        {:source-paths ["src/cljs" "test/cljs"]
                         :compiler {:optimizations :advanced
                                    :pretty-print true
-                                   :output-to "target/cljs/advanced.js"}}
-                       ]
-              :test-commands {"phantom-whitespace" ["runners/phantomjs.js" "target/cljs/whitespace.js"]
-                              "phantom-simple"     ["runners/phantomjs.js" "target/cljs/simple.js"]
-                              "phantom-advanced"   ["runners/phantomjs.js" "target/cljs/advanced.js"]
-                              }}
+                                   :output-to "target/cljs/advanced-test.js"}}]
+              ; test all Google Clojure optimizations
+              :test-commands {"phantom-whitespace"
+                              ["runners/phantomjs.js" "target/cljs/whitespace-test.js"]
+                              "phantom-simple"
+                              ["runners/phantomjs.js" "target/cljs/simple-test.js"]
+                              "phantom-advanced"
+                              ["runners/phantomjs.js" "target/cljs/advanced-test.js"]}}
   :profiles {:1.4 {:dependencies [[org.clojure/clojure "1.4.0"]]}
-             :dev {:dependencies [[log4j "1.2.17" :exclusions [javax.mail/mail
+             :dev {:dependencies [[com.cemerick/clojurescript.test "0.0.4"]
+                                  [log4j "1.2.17" :exclusions [javax.mail/mail
                                                                javax.jms/jms
                                                                com.sun.jdmk/jmxtools
                                                                com.sun.jmx/jmxri]]]}})
