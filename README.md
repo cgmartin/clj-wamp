@@ -52,7 +52,7 @@ and expose some RPC functions and PubSub channels:
 (http-kit/run-server my-wamp-handler {:port 8080})
 ```
 
-An example with *all* configuration options:
+An exhaustive example of *all* configuration options:
 ```clojure
 (def origin-re #"https?://myhost") ; origin header validation
 
@@ -140,8 +140,8 @@ This behavior can be adjusted with the following reconnect options:
 
 ```clojure
 (def ws (wamp-handler "ws://localhost:8080/ws"
-          {:reconnect? true              ; false to disable reconnects
-           :next-reconnect (fn [n] 5000) ; milliseconds till next attempt
+          {:reconnect? true                    ; false to disable reconnects
+           :next-reconnect (fn [n] (* n 5000)) ; milliseconds till next attempt
            ; :on-open ...
            }))
 ```
@@ -169,6 +169,20 @@ Challenge-response authentication is also possible via `auth!` (use it within `o
           (.log js/console "Authentication failed" (pr-str permissions))
           (wamp/close! ws)))))))
 ```
+
+**NOTE:** Challenge-response authentication requires two external CryptoJS libraries in order to work:
+
+```html
+<script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/hmac-sha256.js"></script>
+<script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/components/enc-base64-min.js"></script>
+```
+
+And if you are using `:optimizations :advanced` in your ClojureScript compilation you'll need to reference
+a [CryptoJS externs file](https://github.com/cgmartin/clj-wamp/blob/master/lib/cryptojs-externs.js).
+Without this you will see errors like `Object ... has no method` when using `auth!`.
+
+For more information on ClojureScript externs, see:
+http://lukevanderhart.com/2011/09/30/using-javascript-and-clojurescript.html
 
 ## Change Log
 
