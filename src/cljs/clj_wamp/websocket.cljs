@@ -20,9 +20,9 @@
        (websocket/send! ws \"my message\")
        (websocket/close! ws))"
   [uri & [{:keys [protocol on-open on-close on-message on-error
-                  reconnect? reconnect-ms]
+                  reconnect? next-reconnect]
            :or {reconnect? true}}]]
-  (let [ws (goog.net.WebSocket. reconnect? reconnect-ms)
+  (let [ws (goog.net.WebSocket. reconnect? next-reconnect)
         handler (events/EventHandler.)]
     ; Set up callback listeners
     (when on-open

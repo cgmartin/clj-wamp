@@ -82,11 +82,11 @@
 
 (defn wamp-handler
   [uri & [{:keys [on-open on-close on-event websocket-client
-                  reconnect? reconnect-ms]
+                  reconnect? next-reconnect]
            :or {reconnect? true
                 websocket-client websocket/client}}]]
   (websocket-client uri
-    {:reconnect? reconnect? :reconnect-ms reconnect-ms
+    {:reconnect? reconnect? :next-reconnect next-reconnect
      :on-message (fn [ws data] (on-message ws data on-open on-event))
      :on-close   on-close
      :protocol   "wamp"}))
