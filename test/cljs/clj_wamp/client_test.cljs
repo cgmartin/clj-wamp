@@ -128,3 +128,8 @@
                 :result ["http://api.wamp.ws/error#internal"
                          "internal error" "An exception"]}
               @rpc-result))))))
+
+
+(deftest authsign-test
+  (is (= "UTAHauAu+QJDfg5k2v2hUIjxsrPBGnRp+Wdy1M3Kbks="
+        (client/authsign "foo" "qnscAdgRlkIhAUPY44oiexBKtQbGY0orf7OV1I50"))))

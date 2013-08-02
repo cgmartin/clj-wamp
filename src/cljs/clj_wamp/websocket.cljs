@@ -5,6 +5,9 @@
             [goog.net.WebSocket.EventType :as websocket-event]
             [goog.net.WebSocket.MessageEvent :as websocket-message]))
 
+; Based on code by @neotyk (Thanks!)
+; https://github.com/neotyk/ws-cljs/blob/master/src/cljs/websocket.cljs
+
 (defn client
   "CLJS WebSocket client wrapper.
 
@@ -28,11 +31,7 @@
     (when on-open
       (.listen handler ws websocket-event/OPENED #(on-open ws)))
     (when on-message
-      (.listen handler ws websocket-event/MESSAGE
-        #(let [payload (trim (.-message %))]
-           ;(.log js/console "RCV" payload)
-           (when (not (blank? payload))
-             (on-message ws payload)))))
+      (.listen handler ws websocket-event/MESSAGE #(on-message ws (.-message %))))
     (when on-error
       (.listen handler ws websocket-event/ERROR on-error))
     (when on-close

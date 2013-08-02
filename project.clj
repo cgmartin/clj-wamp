@@ -13,32 +13,27 @@
                  [org.clojure/tools.logging "0.2.6"]
                  [org.clojure/data.codec "0.1.0"]
                  [http-kit "2.1.5"]
-                 [cheshire "5.2.0"]]
-  :cljsbuild {:builds [{:source-paths ["src/cljs"]
-                        :jar true
-                        :compiler {:output-to "target/cljs/cljwamp.js"}}
-                       {:source-paths ["src/cljs" "test/cljs"]
-                        :compiler {:optimizations :whitespace
-                                   :pretty-print true
-                                   :output-to "target/cljs/whitespace-test.js"}}
-                       {:source-paths ["src/cljs" "test/cljs"]
-                        :compiler {:optimizations :simple
-                                   :pretty-print true
-                                   :output-to "target/cljs/simple-test.js"}}
-                       {:source-paths ["src/cljs" "test/cljs"]
-                        :compiler {:optimizations :advanced
-                                   :pretty-print true
-                                   :output-to "target/cljs/advanced-test.js"}}]
-              ; test all Google Clojure optimizations
+                 [cheshire "5.2.0"]
+                 [com.cemerick/clojurescript.test "0.0.4"]]
+  :cljsbuild {:builds {:dev {:source-paths ["src/cljs"]
+                             :jar true
+                             :compiler {:output-to "target/cljs/cljwamp.js"
+                                        :foreign-libs [{:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/hmac-sha256.js"
+                                                        :provides ["cryptojs.hmacsha256"]}
+                                                       {:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/components/enc-base64.js"
+                                                        :provides ["cryptojs.encbase64"]}]}}
+                       :test {:source-paths ["src/cljs" "test/cljs"]
+                              :compiler {:optimizations :whitespace
+                                         :pretty-print true
+                                         :foreign-libs [{:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/hmac-sha256.js"
+                                                         :provides ["cryptojs.hmacsha256"]}
+                                                        {:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/components/enc-base64.js"
+                                                         :provides ["cryptojs.encbase64"]}]
+                                         :output-to "target/cljs/whitespace-test.js"}}}
               :test-commands {"phantom-whitespace"
-                              ["runners/phantomjs.js" "target/cljs/whitespace-test.js"]
-                              "phantom-simple"
-                              ["runners/phantomjs.js" "target/cljs/simple-test.js"]
-                              "phantom-advanced"
-                              ["runners/phantomjs.js" "target/cljs/advanced-test.js"]}}
+                              ["runners/phantomjs.js" "target/cljs/whitespace-test.js"]}}
   :profiles {:1.4 {:dependencies [[org.clojure/clojure "1.4.0"]]}
-             :dev {:dependencies [[com.cemerick/clojurescript.test "0.0.4"]
-                                  [log4j "1.2.17" :exclusions [javax.mail/mail
+             :dev {:dependencies [[log4j "1.2.17" :exclusions [javax.mail/mail
                                                                javax.jms/jms
                                                                com.sun.jdmk/jmxtools
                                                                com.sun.jmx/jmxri]]]}})

@@ -1,6 +1,8 @@
 (ns clj-wamp.client
   (:require [clojure.string :as string :refer [trim blank?]]
-            [clj-wamp.websocket :as websocket]))
+            [clj-wamp.websocket :as websocket]
+            [cryptojs.hmacsha256 :as hmac]
+            [cryptojs.encbase64 :as base64]))
 
 (def ^:const TYPE-ID-WELCOME     0) ; Server-to-client (Aux)
 (def ^:const TYPE-ID-PREFIX      1) ; Client-to-server (Aux)
@@ -90,3 +92,33 @@
      :on-message (fn [ws data] (on-message ws data on-open on-event))
      :on-close   on-close
      :protocol   "wamp"}))
+
+; CR-Authentication
+
+;; When Google Closure Library gets updated to a recent version
+;; we'll get Sha256. Does not exist with cljs currently ~ cgm 2013/8/2
+;(:require [goog.crypt.Hmac :as hmac]
+;          [goog.crypt.Sha256 :as sha256]
+;          [goog.crypt.base64 :as base64])
+;
+;(defn authsign
+;  [password challenge]
+;  (let [hasher (goog.crypt.Sha256.)
+;        hmacer (goog.crypt.Hmac. hasher challenge 32) ; 32 works?
+;        result (.getHmac hmacer password)]
+;    (.encodeString goog.crypt.base64 result)))
+
+(defn authsign [password challenge]
+  (let [hmaced (.HmacSHA256 js/CryptoJS password challenge)]
+    (.toString hmaced js/CryptoJS.enc.Base64)))
+
+(defn auth!
+  ([ws userkey password callback]
+    (auth! ws userkey password authsign callback))
+  ([ws userkey password sign-fn callback]
+    (rpc! ws "http://api.wamp.ws/procedure#authreq" [userkey]
+      (fn [ws success? challenge]
+        (if success?
+          (let [signature (sign-fn password challenge)]
+            (rpc! ws "http://api.wamp.ws/procedure#auth" [signature] callback))
+          (callback false challenge))))))
