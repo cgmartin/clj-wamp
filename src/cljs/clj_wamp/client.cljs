@@ -1,8 +1,6 @@
 (ns clj-wamp.client
   (:require [clojure.string :as string :refer [trim blank?]]
-            [clj-wamp.websocket :as websocket]
-            [cryptojs.hmacsha256 :as hmac]
-            [cryptojs.encbase64 :as base64]))
+            [clj-wamp.websocket :as websocket]))
 
 (def ^:const TYPE-ID-WELCOME     0) ; Server-to-client (Aux)
 (def ^:const TYPE-ID-PREFIX      1) ; Client-to-server (Aux)

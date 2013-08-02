@@ -17,21 +17,22 @@
                  [com.cemerick/clojurescript.test "0.0.4"]]
   :cljsbuild {:builds {:dev {:source-paths ["src/cljs"]
                              :jar true
-                             :compiler {:output-to "target/cljs/cljwamp.js"
-                                        :foreign-libs [{:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/hmac-sha256.js"
-                                                        :provides ["cryptojs.hmacsha256"]}
-                                                       {:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/components/enc-base64.js"
-                                                        :provides ["cryptojs.encbase64"]}]}}
-                       :test {:source-paths ["src/cljs" "test/cljs"]
+                             :compiler {:output-to "target/cljs/cljwamp.js"}}
+                       :test-whitespace {:source-paths ["src/cljs" "test/cljs"]
                               :compiler {:optimizations :whitespace
                                          :pretty-print true
-                                         :foreign-libs [{:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/hmac-sha256.js"
-                                                         :provides ["cryptojs.hmacsha256"]}
-                                                        {:file "http://crypto-js.googlecode.com/svn/tags/3.1.2/build/components/enc-base64.js"
-                                                         :provides ["cryptojs.encbase64"]}]
-                                         :output-to "target/cljs/whitespace-test.js"}}}
+                                         :output-to "target/cljs/whitespace-test.js"}}
+                       :test-advanced {:source-paths ["src/cljs" "test/cljs"]
+                              :compiler {:optimizations :advanced
+                                         :pretty-print false
+                                         :externs ["lib/cryptojs-externs.js"]
+                                         :output-to "target/cljs/advanced-test.js"}}}
               :test-commands {"phantom-whitespace"
-                              ["runners/phantomjs.js" "target/cljs/whitespace-test.js"]}}
+                              ["runners/phantomjs.js" "lib/hmac-sha256.js" "lib/enc-base64.js"
+                               "target/cljs/whitespace-test.js"]
+                              "phantom-advanced"
+                              ["runners/phantomjs.js" "lib/hmac-sha256.js" "lib/enc-base64.js"
+                               "target/cljs/advanced-test.js"]}}
   :profiles {:1.4 {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :dev {:dependencies [[log4j "1.2.17" :exclusions [javax.mail/mail
                                                                javax.jms/jms
