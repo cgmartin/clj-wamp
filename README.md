@@ -137,13 +137,39 @@ To connect to a WAMP server, call the `wamp-handler` with open, close, and event
 
 By default, the `wamp-handler` client will auto-reconnect with an exponential back-off.
 This behavior can be adjusted with the following reconnect options:
+
 ```clojure
 (def ws (wamp-handler "ws://localhost:8080/ws"
           {:reconnect? true              ; false to disable reconnects
            :next-reconnect (fn [n] 5000) ; milliseconds till next attempt
-           ; ...
+           ; :on-open ...
            }))
 ```
+
+Challenge-response authentication is also possible via `auth!` (use it within `on-open`):
+
+```clojure
+(def userkey  "guest")   ; get user/pass from dialog, api-key, etc.
+(def password "pass123")
+
+(defn on-open [ws sess-id]
+  (.log js/console "WAMP connected" sess-id)
+
+  (wamp/auth! ws userkey password
+    (fn [ws success? permissions]
+      (if success?
+        (do
+          (.log js/console "Authentication complete" (pr-str permissions))
+
+          (wamp/prefix! ws "event" "http://clj-wamp-cljs/event#")
+          (wamp/prefix! ws "rpc"   "http://clj-wamp-cljs/rpc#")
+          (wamp/subscribe! ws "event:chat")
+          ; ... etc ... do more setup
+        (do
+          (.log js/console "Authentication failed" (pr-str permissions))
+          (wamp/close! ws)))))))
+```
+
 ## Change Log
 
 [CHANGES.md](https://github.com/cgmartin/clj-wamp/blob/master/CHANGES.md)
