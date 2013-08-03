@@ -170,20 +170,6 @@ Challenge-response authentication is also possible via `auth!` (use it within `o
           (wamp/close! ws)))))))
 ```
 
-**NOTE:** Challenge-response authentication requires two external CryptoJS libraries in order to work:
-
-```html
-<script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/hmac-sha256.js"></script>
-<script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/components/enc-base64-min.js"></script>
-```
-
-And if you are using `:optimizations :advanced` in your ClojureScript compilation you'll need to reference
-a [CryptoJS externs file](https://github.com/cgmartin/clj-wamp/blob/master/lib/cryptojs-externs.js).
-Without this you will see errors like `Object ... has no method` when using `auth!`.
-
-For more information on ClojureScript externs, see:
-http://lukevanderhart.com/2011/09/30/using-javascript-and-clojurescript.html
-
 ## Change Log
 
 [CHANGES.md](https://github.com/cgmartin/clj-wamp/blob/master/CHANGES.md)

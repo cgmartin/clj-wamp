@@ -1,6 +1,10 @@
 (ns clj-wamp.client
   (:require [clojure.string :as string :refer [trim blank?]]
-            [clj-wamp.websocket :as websocket]))
+            [clj-wamp.websocket :as websocket]
+            [goog.crypt :as crypt]
+            [goog.crypt.Hmac :as hmac]
+            [goog.crypt.Sha256 :as sha256]
+            [goog.crypt.base64 :as base64]))
 
 (def ^:const TYPE-ID-WELCOME     0) ; Server-to-client (Aux)
 (def ^:const TYPE-ID-PREFIX      1) ; Client-to-server (Aux)
@@ -21,8 +25,7 @@
 
 (defn prefix!
   [ws prefix curi]
-  (let [msg [TYPE-ID-PREFIX prefix curi]]
-    (send! ws msg)))
+  (send! ws [TYPE-ID-PREFIX prefix curi]))
 
 (defn rpc!
   [ws curi params callback]
@@ -33,13 +36,11 @@
 
 (defn subscribe!
   [ws curi]
-  (let [msg [TYPE-ID-SUBSCRIBE curi]]
-    (send! ws msg)))
+  (send! ws [TYPE-ID-SUBSCRIBE curi]))
 
 (defn unsubscribe!
   [ws curi]
-  (let [msg [TYPE-ID-UNSUBSCRIBE curi]]
-    (send! ws msg)))
+  (send! ws [TYPE-ID-UNSUBSCRIBE curi]))
 
 (defn publish!
   [ws curi event & more]
@@ -91,24 +92,20 @@
      :on-close   on-close
      :protocol   "wamp"}))
 
-; CR-Authentication
+;; CR-Authentication
 
-;; When Google Closure Library gets updated to a recent version
-;; we'll get Sha256. Does not exist with cljs currently ~ cgm 2013/8/2
-;(:require [goog.crypt.Hmac :as hmac]
-;          [goog.crypt.Sha256 :as sha256]
-;          [goog.crypt.base64 :as base64])
-;
-;(defn authsign
-;  [password challenge]
-;  (let [hasher (goog.crypt.Sha256.)
-;        hmacer (goog.crypt.Hmac. hasher challenge 32) ; 32 works?
-;        result (.getHmac hmacer password)]
-;    (.encodeString goog.crypt.base64 result)))
+(defn authsign
+  [password challenge]
+  (let [challbytes (.stringToByteArray goog.crypt challenge)
+        passbytes  (.stringToByteArray goog.crypt password)
+        hasher     (goog.crypt.Sha256.)]
+    (.encodeByteArray goog.crypt.base64
+      (.getHmac (goog.crypt.Hmac. hasher challbytes 64) passbytes))))
 
-(defn authsign [password challenge]
-  (let [hmaced (.HmacSHA256 js/CryptoJS password challenge)]
-    (.toString hmaced js/CryptoJS.enc.Base64)))
+;; CryptoJS example
+;(defn authsign [password challenge]
+;  (let [hmaced (.HmacSHA256 js/CryptoJS password challenge)]
+;    (.toString hmaced js/CryptoJS.enc.Base64)))
 
 (defn auth!
   ([ws userkey password callback]

@@ -132,4 +132,6 @@
 
 (deftest authsign-test
   (is (= "UTAHauAu+QJDfg5k2v2hUIjxsrPBGnRp+Wdy1M3Kbks="
-        (client/authsign "foo" "qnscAdgRlkIhAUPY44oiexBKtQbGY0orf7OV1I50"))))
+        (client/authsign "foo" "qnscAdgRlkIhAUPY44oiexBKtQbGY0orf7OV1I50")))
+  (is (= "ic8u+IGANya+moIKmtHG2vkoSA1hCOWyOc0qOQoQbus="
+        (client/authsign "bar" "TjvwZgVgeEGcAjcVQ3urkAKz7kb4us70rCcchVdl"))))
