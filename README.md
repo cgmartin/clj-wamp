@@ -41,7 +41,7 @@ and expose some RPC functions and PubSub channels:
 (defn my-wamp-handler
   "Returns a http-kit websocket handler with wamp subprotocol"
   [request]
-  (wamp/with-channel request channel
+  (http-kit/with-channel request channel
     (wamp/http-kit-handler channel
       {:on-call        {(rpc-url "add")   +     ; Expose plain old functions as RPC
                         (rpc-url "echo")  identity}
