@@ -1,3 +1,6 @@
+## 1.0.2 (2014/4/12)
+ * Fix: Support catch-all ("*") in subscribe and publish maps
+
 ## 1.0.0 (2013/7/17)
  * Feature #7: Permissions can be allowed in bulk for all topics, or
    per topic category.

@@ -23,7 +23,7 @@ lein new clj-wamp my-project
 
 ...or add the following dependency to your existing `project.clj` file:
 ```clojure
-[clj-wamp "1.0.0"]
+[clj-wamp "1.0.2"]
 ```
 
 Run clj-wamp's http-kit-handler within http-kit's with-channel context:
