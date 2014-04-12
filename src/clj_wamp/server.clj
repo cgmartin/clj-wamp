@@ -453,7 +453,7 @@
       (for [[mk mv] m]
         (when (and (not (keyword? mk)) (not (false? mv))
                 (= \* (last mk))
-                (= (take (dec (count mk)) k) (butlast mk)))
+                (= (seq (take (dec (count mk)) k)) (butlast mk)))
           mv)))))
 
 (defn- on-subscribe
