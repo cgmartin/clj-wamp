@@ -1,6 +1,6 @@
 # clj-wamp
 
-A Clojure implementation of the WebSocket Application Messaging Protocol,
+A Clojure implementation of the WebSocket Application Messaging Protocol (v1),
 for HTTP Kit servers.
 
 Provides hooks for common WebSocket messaging patterns and error handling (RPC, PubSub, and Authentication).
@@ -12,7 +12,7 @@ See [clj-wamp-example](https://github.com/cgmartin/clj-wamp-example) for an exam
 
 For information on **HTTP Kit**, a Ring-compatible HTTP server for Clojure, visit [http-kit.org](http://http-kit.org/).
 
-For information on the **WAMP specification**, visit [wamp.ws](http://wamp.ws).
+For information on the **WAMP v1 specification**, visit [wamp.ws](http://wamp.ws).
 
 ## Usage
 
