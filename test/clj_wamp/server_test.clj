@@ -1,9 +1,10 @@
 (ns clj-wamp.server-test
-  (:use clojure.test
-        clj-wamp.server)
-  (:require [org.httpkit.server :as httpkit]
+  (:require [clojure.test :refer :all]
+            [org.httpkit.server :as httpkit]
             [cheshire.core :as json]
-            [clojure.tools.logging :as log]))
+            [clojure.tools.logging :as log]
+            [clj-wamp.core :as core]
+            [clj-wamp.server :refer :all]))
 
 (def real-proj-ver
   (apply str
@@ -11,7 +12,7 @@
       (rest (take 3 (read-string (slurp "project.clj")))))))
 
 (deftest project-version-test
-  (is (= real-proj-ver project-version)))
+  (is (= real-proj-ver core/project-version)))
 
 ;; :on-open callback test utils
 
@@ -286,7 +287,7 @@
       #(let [sess-id (http-kit-handler client-receive test-handler-callbacks)]
          ; Test init
          (is (ws-opened? sess-id))
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
 
          ; Pub/Sub Events
          (@send (json/encode [TYPE-ID-PREFIX, "event", evt-base-url]))
@@ -437,7 +438,7 @@
        #'httpkit/on-receive (fn [ch cb] (reset! send cb))
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-handler-callbacks)]
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
 
          ; send auth before auth request, expect error
          (@send (json/encode [TYPE-ID-CALL, "auth-rpc1", URI-WAMP-CALL-AUTH, "foo"]))
@@ -519,7 +520,7 @@
        #'httpkit/on-receive (fn [ch cb] (reset! send cb))
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-handler-callbacks)]
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
 
          ; send auth request
          (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc4", URI-WAMP-CALL-AUTHREQ]))
@@ -579,7 +580,7 @@
        #'httpkit/on-receive (fn [ch cb] (reset! send cb))
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-all-perm-handler-callbacks)]
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
 
          ; send auth request
          (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc5", URI-WAMP-CALL-AUTHREQ]))
@@ -628,7 +629,7 @@
        #'httpkit/on-receive (fn [ch cb] (reset! send cb))
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-short-perm-handler-callbacks)]
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
 
          ; send auth request
          (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc5", URI-WAMP-CALL-AUTHREQ]))
@@ -676,7 +677,7 @@
        #'httpkit/on-receive (fn [ch cb] (reset! send cb))
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-some-perm-handler-callbacks)]
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
 
          ; send auth request
          (@send (json/encode [TYPE-ID-CALL, "auth-req-rpc5", URI-WAMP-CALL-AUTHREQ]))
@@ -736,7 +737,7 @@
        #'httpkit/on-receive (fn [ch cb] (reset! send cb))
        #'httpkit/close      (fn [ch]    (@close "forced"))}
       #(let [sess-id (http-kit-handler client-receive auth-timeout-handler-callbacks)]
-         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, project-version])
+         (msg-received? [TYPE-ID-WELCOME, sess-id, 1, core/project-version])
          (Thread/sleep 100)
          ; closed?
          (is (ws-closed? sess-id "forced"))

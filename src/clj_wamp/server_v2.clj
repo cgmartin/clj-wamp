@@ -8,14 +8,13 @@
             [org.httpkit.timer :as timer]
             [cheshire.core :as json]
             [clojure.tools.logging :as log]
-            [clojure.data.codec.base64 :as base64])
+            [clojure.data.codec.base64 :as base64]
+            [clj-wamp.core :as core])
   (:import [org.httpkit.server AsyncChannel]
            [javax.crypto Mac]
            [javax.crypto.spec SecretKeySpec]))
 
 (def ^:private wamp-protocol-id "wamp.2.json")
-
-(declare send!)
 
 (def ^:private ^:const message-id-table
   {:HELLO 1
@@ -71,70 +70,6 @@
 (def ^:const DESC-WAMP-ERROR-NOAUTH   "unauthorized")
 (def ^:const URI-WAMP-ERROR-NOAUTH    (str URI-WAMP-ERROR "unauthorized"))
 
-(def project-version "clj-wamp/2.0.0")
-
-(def max-sess-id (atom 0))
-
-(defn- next-sess-id []
-  (swap! max-sess-id inc))
-
-
-;; Client utils
-
-(def client-channels (ref {}))
-(def client-prefixes (ref {}))
-(def client-auth     (ref {}))
-
-(defn add-client
-  "Adds a websocket channel (or callback function) to a map of clients
-  and returns a unique session id."
-  [channel-or-fn]
-  (let [sess-id (str (System/currentTimeMillis) "-" (next-sess-id))]
-    (dosync (alter client-channels assoc sess-id channel-or-fn))
-    sess-id))
-
-(defn get-client-channel
-  "Returns the channel (or callback function) for a websocket client's
-  session id."
-  [sess-id]
-  (get @client-channels sess-id))
-
-(defn del-client
-  "Removes a websocket session from the map of clients."
-  [sess-id]
-  (dosync
-    (alter client-channels dissoc sess-id)
-    (alter client-prefixes dissoc sess-id)
-    (alter client-auth     dissoc sess-id)))
-
-(defn add-topic-prefix
-  "Adds a new CURI topic prefix for a websocket client."
-  [sess-id prefix uri]
-  (log/trace "New CURI Prefix [" sess-id "]" prefix uri)
-  (dosync
-    (alter client-prefixes assoc-in [sess-id prefix] uri)))
-
-(defn get-topic
-  "Returns the full topic URI for a prefix. If prefix does not exist,
-  returns the CURI passed in."
-  [sess-id curi]
-  (let [topic (split curi #":")
-        prefix (first topic)
-        suffix (second topic)]
-    (if-let [uri (get-in @client-prefixes [sess-id prefix])]
-      (str uri suffix)
-      curi)))
-
-(defn close-channel
-  ([sess-id]
-    (close-channel sess-id 1002))
-  ([sess-id code]
-    (when-let [channel (get-client-channel sess-id)]
-      (if (fn? channel)
-        (httpkit/close channel) ; for unit testing
-        (.serverClose channel code)) ; TODO thread-safe? (locking AsyncChannel ...) ?
-      (log/trace "Channel closed" code))))
-
 ;; Topic utils
 
 (def client-topics (ref {}))
@@ -159,7 +94,7 @@
   [topic & data]
   (dosync
     (doseq [[sess-id _] (@topic-clients topic)]
-      (apply send! sess-id data))))
+      (apply core/send! sess-id data))))
 
 (defn- topic-broadcast!
   "Send an event to websocket clients subscribed to a topic,
@@ -169,7 +104,7 @@
     (dosync
       (doseq [[sess-id _] (@topic-clients topic)]
         (if (not-any? #{sess-id} excludes)
-          (apply send! sess-id data))))))
+          (apply core/send! sess-id data))))))
 
 (defn- topic-emit!
   "Sends an event to a specific list of websocket clients subscribed
@@ -179,7 +114,7 @@
     (dosync
       (doseq [[sess-id _] (@topic-clients topic)]
         (if (some #{sess-id} includes)
-          (apply send! sess-id data))))))
+          (apply core/send! sess-id data))))))
 
 (defn get-topic-clients [topic]
   "Returns all client session ids within a topic."
@@ -192,7 +127,7 @@
   "Sends data to a websocket client."
   [sess-id & data]
   (dosync
-    (let [channel-or-fn (get-client-channel sess-id)
+    (let [channel-or-fn (core/get-client-channel sess-id)
           json-data     (json/encode data {:escape-non-ascii true})]
       (log/trace "Sending data:" data)
       (if (fn? channel-or-fn) ; application callback?
@@ -204,17 +139,17 @@
   "Sends a WAMP welcome message to a websocket client.
   [WELCOME, Session|id, Details|dict]"
   [sess-id]
-  (send! sess-id (message-id :WELCOME) sess-id {}))
+  (core/send! sess-id (message-id :WELCOME) sess-id {:version core/project-version}))
 
 (defn send-abort!
   "Sends an ABORT message to abort opening a session."
   [sess-id details-dict reason-uri]
-  (send! sess-id (message-id :ABORT) details-dict reason-uri))
+  (core/send! sess-id (message-id :ABORT) details-dict reason-uri))
 
 (defn send-goodbye!
   "Send a GOODBYE message"
   [sess-id details-dict reason-uri]
-  (send! sess-id (message-id :GOODBYE) details-dict reason-uri))
+  (core/send! sess-id (message-id :GOODBYE) details-dict reason-uri))
 
 (defn send-call-result!
   "Sends a WAMP call result message to a websocket client.
@@ -222,7 +157,7 @@
    [RESULT, CALL.Request|id, Details|dict, YIELD.Arguments|list]
    [RESULT, CALL.Request|id, Details|dict, YIELD.Arguments|list, YIELD.ArgumentsKw|dict]"
   [sess-id call-id result]
-  (send! sess-id (message-id :CALL) call-id result))
+  (core/send! sess-id (message-id :CALL) call-id result))
 
 (defn send-error!
   "Sends a WAMP call error message to a websocket client.
@@ -230,7 +165,7 @@
    [ERROR, CALL, CALL.Request|id, Details|dict, Error|uri, Arguments|list]
    [ERROR, CALL, CALL.Request|id, Details|dict, Error|uri, Arguments|list, ArgumentsKw|dict]"
   [sess-id call-id error-info error-uri]
-  (send! sess-id (message-id :ERROR) call-id error-info error-uri))
+  (core/send! sess-id (message-id :ERROR) call-id error-info error-uri))
 
 (defn send-event!
   "Sends an event message to all clients in topic.
@@ -271,7 +206,7 @@
                           (topic-unsubscribe topic sess-id)
                           topic))))]
       (when (fn? unsub-cb) (unsub-cb sess-id topic)))
-    (del-client sess-id)))
+    (core/del-client sess-id)))
 
 (defn- call-success
   [sess-id topic call-id result on-after-cb]
@@ -290,7 +225,7 @@
         err-msg (if (nil? err-msg) DESC-WAMP-ERROR-GENERIC err-msg)]
     (send-error! sess-id call-id {:message err-msg
                                   :description err-desc} err-uri)
-    (when kill (close-channel sess-id))))
+    (when kill (core/close-channel sess-id))))
 
 ; Optional session id for rpc calls
 (def ^:dynamic *call-sess-id* nil)
@@ -314,7 +249,7 @@
 (defn- auth-sig-match?
   "Check whether the client signature matches the server's signature."
   [sess-id signature]
-  (if-let [auth-sig (get-in @client-auth [sess-id :sig])]
+  (if-let [auth-sig (get-in @core/client-auth [sess-id :sig])]
     (= signature auth-sig)))
 
 (defn- add-client-auth-sig
@@ -323,7 +258,7 @@
   [sess-id auth-key auth-secret challenge]
   (let [sig (hmac-sha-256 challenge auth-secret)]
     (dosync
-      (alter client-auth assoc sess-id {:sig   sig
+      (alter core/client-auth assoc sess-id {:sig   sig
                                         :key   auth-key
                                         :auth? false}))
     sig))
@@ -331,17 +266,17 @@
 (defn- add-client-auth-anon
   "Stores anonymous client metadata with the session."
   [sess-id]
-  (dosync (alter client-auth assoc sess-id {:key :anon :auth? false})))
+  (dosync (alter core/client-auth assoc sess-id {:key :anon :auth? false})))
 
 (defn client-auth-requested?
   "Checks if the authreq call has already occurred."
   [sess-id]
-  (not (nil? (get-in @client-auth [sess-id :key]))))
+  (not (nil? (get-in @core/client-auth [sess-id :key]))))
 
 (defn client-authenticated?
   "Checks if authentication has occurred."
   [sess-id]
-  (get-in @client-auth [sess-id :auth?]))
+  (get-in @core/client-auth [sess-id :auth?]))
 
 (defn- permission?
   "Checks if a topic and category has permissions in a permission map.
@@ -356,7 +291,7 @@
 (defn authorized?
   "Checks if the session is authorized for a message category and topic."
   [sess-id category topic perm-cb]
-  (if-let [auth-key (get-in @client-auth [sess-id :key])]
+  (if-let [auth-key (get-in @core/client-auth [sess-id :key])]
     (let [perms (perm-cb sess-id auth-key)]
       (permission? perms category topic))))
 
@@ -414,14 +349,14 @@
         (if (not (client-auth-requested? *call-sess-id*))
           {:error {:uri (str URI-WAMP-ERROR "no-authentication-requested")
                    :message "no authentication previously requested"}}
-          (let [auth-key (get-in @client-auth [*call-sess-id* :key])]
+          (let [auth-key (get-in @core/client-auth [*call-sess-id* :key])]
             (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
               (do
-                (alter client-auth assoc-in [*call-sess-id* :auth?] true)
+                (alter core/client-auth assoc-in [*call-sess-id* :auth?] true)
                 (expand-auth-perms (perm-cb *call-sess-id* auth-key) wamp-cbs))
               (do
                 ; remove previous auth data, must request and authenticate again
-                (alter client-auth dissoc *call-sess-id*)
+                (alter core/client-auth dissoc *call-sess-id*)
                 {:error {:uri (str URI-WAMP-ERROR "invalid-signature")
                          :message "signature for authentication request is invalid"}}))))))))
 
@@ -441,7 +376,7 @@
   "Closes the session if the client has not authenticated."
   [sess-id]
   (when-not (client-authenticated? sess-id)
-    (close-channel sess-id)))
+    (core/close-channel sess-id)))
 
 (defn- init-auth-timer
   "Ensure authentication occurs within a certain time period or else
@@ -560,7 +495,7 @@
         (message-id :CALL) 
         (when (map? on-call-cbs)
           (let [[call-id call-opts topic-uri call-params call-kw-params] msg-params
-                topic (get-topic sess-id topic-uri)]
+                topic (core/get-topic sess-id topic-uri)]
             (if (or (nil? perm-cb)
                     (= URI-WAMP-CALL-AUTHREQ topic)
                     (= URI-WAMP-CALL-AUTH topic)
@@ -580,7 +515,7 @@
           2 ;TYPE-ID-CALL
           (if (map? on-call-cbs)
             (let [[call-id topic-uri & call-params] msg-params
-                  topic (get-topic sess-id topic-uri)]
+                  topic (core/get-topic sess-id topic-uri)]
               (if (or (nil? perm-cb)
                       (= URI-WAMP-CALL-AUTHREQ topic)
                       (= URI-WAMP-CALL-AUTH topic)
@@ -591,12 +526,12 @@
                             (on-call-cbs :on-after-error)))))
 
           5 ;TYPE-ID-SUBSCRIBE
-          (let [topic (get-topic sess-id (first msg-params))]
+          (let [topic (core/get-topic sess-id (first msg-params))]
             (if (or (nil? perm-cb) (authorized? sess-id :subscribe topic perm-cb))
               (on-subscribe on-sub-cbs sess-id topic)))
 
           6 ;TYPE-ID-UNSUBSCRIBE
-          (let [topic (get-topic sess-id (first msg-params))]
+          (let [topic (core/get-topic sess-id (first msg-params))]
             (dosync
               (when (true? (get-in @topic-clients [topic sess-id]))
                 (topic-unsubscribe topic sess-id)
@@ -604,7 +539,7 @@
 
           7 ;TYPE-ID-PUBLISH
           (let [[topic-uri event & pub-args] msg-params
-                topic (get-topic sess-id topic-uri)]
+                topic (core/get-topic sess-id topic-uri)]
             (if (or (nil? perm-cb) (authorized? sess-id :publish topic perm-cb))
               (apply on-publish on-pub-cbs sess-id topic event pub-args))))
 
@@ -720,7 +655,7 @@
   [channel callbacks-map]
   (let [callbacks-map (init-cr-auth callbacks-map)
         cb-on-open    (callbacks-map :on-open)
-        sess-id       (add-client channel)]
+        sess-id       (core/add-client channel)]
     (httpkit/on-close channel   (on-close sess-id
                                   (callbacks-map :on-close)
                                   (callbacks-map :on-unsubscribe)))
