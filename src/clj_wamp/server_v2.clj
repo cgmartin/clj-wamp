@@ -46,6 +46,7 @@
   [msg-keyword]
   (get message-id-table msg-keyword))
 
+(comment
 (def ^:const TYPE-ID-PREFIX      1) ; Client-to-server (Aux)
 (def ^:const TYPE-ID-CALL        2) ; Client-to-server (RPC)
 (def ^:const TYPE-ID-CALLRESULT  3) ; Server-to-client (RPC)
@@ -54,7 +55,34 @@
 (def ^:const TYPE-ID-UNSUBSCRIBE 6) ; Client-to-server (PubSub)
 (def ^:const TYPE-ID-PUBLISH     7) ; Client-to-server (PubSub)
 (def ^:const TYPE-ID-EVENT       8) ; Server-to-client (PubSub)
+)
 
+; Predefined URIs
+(def ^:const wamp-error-uri-table
+  {:invalid-uri "wamp.error.invalid_uri"
+   :no-such-procedure "wamp.error.no_such_procedure"
+   :procedure-already-exists "wamp.error.procedure_already_exists"
+   :no-such-registration "wamp.error.no_such_registration"
+   :no-such-subscription "wamp.error.no_such_subscription"
+   :invalid-argument "wamp.error.invalid_argument"
+   :system-shutdown "wamp.error.system_shutdown"
+   :close-realm "wamp.error.close_realm"
+   :goodbye-and-out "wamp.error.goodbye_and_out"
+   :not-authorized "wamp.error.not_authorized"
+   :authorization-failed "wamp.error.authorization_failed"
+   :no-such-realm "wamp.error.no_such_realm"
+   :no-such-role "wamp.error.no_such_role"
+   ; Errors below are not part of the specification
+   :internal-error "wamp.error.internal-error"
+   :application-error "wamp.error.application_error"
+   })
+
+(defmacro wamp-error-uri
+  [error-keyword]
+  (get wamp-error-uri-table error-keyword))
+
+(comment
+  ; v1
 (def ^:const URI-WAMP-BASE            "http://api.wamp.ws/")
 (def ^:const URI-WAMP-ERROR           (str URI-WAMP-BASE "error#"))
 (def ^:const URI-WAMP-PROCEDURE       (str URI-WAMP-BASE "procedure#"))
@@ -69,6 +97,7 @@
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 (def ^:const DESC-WAMP-ERROR-NOAUTH   "unauthorized")
 (def ^:const URI-WAMP-ERROR-NOAUTH    (str URI-WAMP-ERROR "unauthorized"))
+)
 
 ;; Topic utils
 
@@ -176,18 +205,17 @@
   "Sends an event message to all clients in topic.
   [ TYPE_ID_EVENT , topicURI , event ]"
   [topic event]
-  (topic-send! topic TYPE-ID-EVENT topic event))
+  (topic-send! topic (message-id :EVENT) topic event))
 
 (defn broadcast-event!
   "Sends an event message to all clients in a topic but those excluded."
   [topic event excludes]
-  (topic-broadcast! topic excludes TYPE-ID-EVENT topic event))
+  (topic-broadcast! topic excludes (message-id :EVENT) topic event))
 
 (defn emit-event!
   "Sends an event message to specific clients in a topic"
   [topic event includes]
-    (topic-emit! topic includes TYPE-ID-EVENT topic event))
-
+    (topic-emit! topic includes (message-id :EVENT) topic event))
 
 ;; WAMP callbacks
 
@@ -226,8 +254,8 @@
         cb-params (apply callback-rewrite on-after-cb cb-params)
         [sess-id topic call-id error] cb-params
         {err-uri :uri err-msg :message err-desc :description kill :kill} error
-        err-uri (if (nil? err-uri) URI-WAMP-ERROR-GENERIC err-uri)
-        err-msg (if (nil? err-msg) DESC-WAMP-ERROR-GENERIC err-msg)]
+        err-uri (if (nil? err-uri) (wamp-error-uri :application-error) err-uri)
+        err-msg (if (nil? err-msg) "Application error" err-msg)]
     (send-error! sess-id call-id {:message err-msg
                                   :description err-desc} err-uri)
     (when kill (core/close-channel sess-id))))
@@ -248,6 +276,7 @@
 (defn auth-challenge
   "Generates a challenge hash used by the client to sign the secret."
   [sess-id auth-key auth-secret]
+  (throw (Exception. "Fix hazard here"))
   (let [hmac-key (str auth-secret "-" (System/currentTimeMillis) "-" sess-id)]
     (hmac-sha-256 hmac-key auth-key)))
 
@@ -306,16 +335,16 @@
   (fn [& [auth-key extra]]
     (dosync
       (if (client-authenticated? *call-sess-id*)
-        {:error {:uri (str URI-WAMP-ERROR "already-authenticated")
+        {:error {:uri (wamp-error-uri :authorization-failed)
                  :message "already authenticated"}}
         (if (client-auth-requested? *call-sess-id*)
-          {:error {:uri (str URI-WAMP-ERROR "authentication-already-requested")
+          {:error {:uri (wamp-error-uri :authorization-failed)
                    :message "authentication request already issued - authentication pending"}}
 
           (if (nil? auth-key)
             ; Allow anonymous auth?
             (if-not allow-anon?
-              {:error {:uri (str URI-WAMP-ERROR "anonymous-auth-forbidden")
+              {:error {:uri (wamp-error-uri :not-authorized)
                        :message "authentication as anonymous is forbidden"}}
               (do
                 (add-client-auth-anon *call-sess-id*)
@@ -325,7 +354,7 @@
               (let [challenge (auth-challenge *call-sess-id* auth-key auth-secret)]
                 (add-client-auth-sig *call-sess-id* auth-key auth-secret challenge)
                 challenge) ; return the challenge
-              {:error {:uri (str URI-WAMP-ERROR "no-such-authkey")
+              {:error {:uri (wamp-error-uri :authorization-failed)
                        :message "authentication key does not exist"}})))))))
 
 (defn- expand-auth-perms
@@ -349,10 +378,10 @@
   (fn [& [signature]]
     (dosync
       (if (client-authenticated? *call-sess-id*)
-        {:error {:uri (str URI-WAMP-ERROR "already-authenticated")
+        {:error {:uri (wamp-error-uri :authorization-failed)
                  :message "already authenticated"}}
         (if (not (client-auth-requested? *call-sess-id*))
-          {:error {:uri (str URI-WAMP-ERROR "no-authentication-requested")
+          {:error {:uri (wamp-error-uri :authorization-failed)
                    :message "no authentication previously requested"}}
           (let [auth-key (get-in @core/client-auth [*call-sess-id* :key])]
             (if (or (= :anon auth-key) (auth-sig-match? *call-sess-id* signature))
@@ -362,13 +391,14 @@
               (do
                 ; remove previous auth data, must request and authenticate again
                 (alter core/client-auth dissoc *call-sess-id*)
-                {:error {:uri (str URI-WAMP-ERROR "invalid-signature")
+                {:error {:uri (wamp-error-uri :not-authorized)
                          :message "signature for authentication request is invalid"}}))))))))
 
 (defn- init-cr-auth
   "Initializes the authorization RPC calls (if configured)."
   [callbacks]
-  (if-let [auth-cbs (callbacks :on-auth)]
+  callbacks
+  #_(if-let [auth-cbs (callbacks :on-auth)]
     (let [allow-anon? (auth-cbs :allow-anon?)
           secret-cb   (auth-cbs :secret)
           perm-cb     (auth-cbs :permissions)]
@@ -413,18 +443,16 @@
           (if (nil? error)
             (call-success sess-id topic call-id result (callbacks :on-after-success))
             (call-error   sess-id topic call-id error  (callbacks :on-after-error)))))
-
       (catch Exception e
         (call-error sess-id topic call-id
-          {:uri URI-WAMP-ERROR-INTERNAL
-           :message DESC-WAMP-ERROR-INTERNAL
+          {:uri (wamp-error-uri :internal-error)
+           :message "Internal error" 
            :description (.getMessage e)}
           (callbacks :on-after-error))
         (log/error "RPC Exception:" topic call-params e)))
-
     (call-error sess-id topic call-id
-      {:uri URI-WAMP-ERROR-NOTFOUND
-       :message DESC-WAMP-ERROR-NOTFOUND}
+      {:uri (wamp-error-uri :no-such-procedure)
+       :message (str "No such procedure: '" topic "'")}
       (callbacks :on-after-error))))
 
 (defn- map-key-or-prefix
@@ -502,12 +530,12 @@
           (let [[call-id call-opts topic-uri call-params call-kw-params] msg-params
                 topic (core/get-topic sess-id topic-uri)]
             (if (or (nil? perm-cb)
-                    (= URI-WAMP-CALL-AUTHREQ topic)
-                    (= URI-WAMP-CALL-AUTH topic)
+                    ;(= URI-WAMP-CALL-AUTHREQ topic)
+                    ;(= URI-WAMP-CALL-AUTH topic)
                     (authorized? sess-id :rpc topic perm-cb))
-              (apply on-call on-call-cbs sess-id topic call-id call-opts call-params call-kw-params)
+              (on-call on-call-cbs sess-id topic call-id call-opts call-params call-kw-params)
               (call-error sess-id topic call-id
-                          {:uri URI-WAMP-ERROR-NOAUTH :message DESC-WAMP-ERROR-NOAUTH}
+                          {:uri (wamp-error-uri :not-authorized) :message "Access denied"}
                           (on-call-cbs :on-after-error)))))
 
 
