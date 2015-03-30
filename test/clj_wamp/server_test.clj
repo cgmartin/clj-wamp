@@ -399,10 +399,10 @@
          (msg-received? nil)
 
          ; Test close
-         (dosync (is (not (nil? (get @client-channels sess-id)))))
+         (dosync (is (not (nil? (get @core/client-channels sess-id)))))
          (@close "close-status")
          (is (ws-closed? sess-id "close-status"))
-         (dosync (is (nil? (get @client-channels sess-id))))
+         (dosync (is (nil? (get @core/client-channels sess-id))))
          (dosync (is (= {} @topic-clients)))
          ))))
 
@@ -509,7 +509,7 @@
                            "already authenticated"]))
 
          (@close "close-status")
-         (dosync (is (= {} @client-auth)))
+         (dosync (is (= {} @core/client-auth)))
          ))))
 
 (deftest http-kit-handler-anon-auth-test
@@ -534,7 +534,7 @@
                                                            :publish   {(evt-url "allow-sub") true}}])
 
          (@close "close-status")
-         (dosync (is (= {} @client-auth)))
+         (dosync (is (= {} @core/client-auth)))
          ))))
 
 
@@ -618,7 +618,7 @@
          (msg-received? [TYPE-ID-EVENT, (str evt-base-url "pubsub2"), "allowed"])
 
          (@close "close-status")
-         (dosync (is (= {} @client-auth)))
+         (dosync (is (= {} @core/client-auth)))
          ))))
 
 (deftest http-kit-handler-short-auth-test
@@ -666,7 +666,7 @@
          (msg-received? nil)
 
          (@close "close-status")
-         (dosync (is (= {} @client-auth)))
+         (dosync (is (= {} @core/client-auth)))
          ))))
 
 (deftest http-kit-handler-some-auth-test
@@ -714,7 +714,7 @@
          (msg-received? nil)
 
          (@close "close-status")
-         (dosync (is (= {} @client-auth)))
+         (dosync (is (= {} @core/client-auth)))
          ))))
 
 ;; Auth Timeout Tests
