@@ -139,7 +139,12 @@
   "Sends a WAMP welcome message to a websocket client.
   [WELCOME, Session|id, Details|dict]"
   [sess-id]
-  (core/send! sess-id (message-id :WELCOME) sess-id {:version core/project-version}))
+  (core/send! sess-id (message-id :WELCOME) sess-id
+              {:version core/project-version
+               :roles
+               {:dealer {}
+                ;:callee {}
+                }}))
 
 (defn send-abort!
   "Sends an ABORT message to abort opening a session."
@@ -487,7 +492,7 @@
           perm-cb      (get-in callbacks [:on-auth :permissions])]
       (condp = msg-type
 
-        (message-id :HELLO) nil
+        (message-id :HELLO) (send-welcome! sess-id)
 
         (message-id :GOODBYE)
         (send-goodbye! sess-id (nth msg-params 1) (nth msg-params 2))
@@ -660,7 +665,6 @@
                                   (callbacks-map :on-close)
                                   (callbacks-map :on-unsubscribe)))
     (httpkit/on-receive channel (on-message sess-id callbacks-map))
-    (send-welcome! sess-id)
     (when (fn? cb-on-open) (cb-on-open sess-id))
     (init-auth-timer callbacks-map sess-id)
     sess-id))
