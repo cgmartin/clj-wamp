@@ -14,7 +14,7 @@
            [javax.crypto Mac]
            [javax.crypto.spec SecretKeySpec]))
 
-(def ^:private wamp-protocol-id "wamp.2.json")
+(def wamp-protocol-id "wamp.2.json")
 
 (def ^:private ^:const message-id-table
   {:HELLO 1

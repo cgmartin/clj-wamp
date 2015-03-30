@@ -8,7 +8,8 @@
             [org.httpkit.timer :as timer]
             [cheshire.core :as json]
             [clojure.tools.logging :as log]
-            [clojure.data.codec.base64 :as base64])
+            [clojure.data.codec.base64 :as base64]
+            [clj-wamp.core :refer [project-version]])
   (:import [org.httpkit.server AsyncChannel]
            [javax.crypto Mac]
            [javax.crypto.spec SecretKeySpec]))
@@ -39,8 +40,6 @@
 (def ^:const DESC-WAMP-ERROR-NOTFOUND "not found error")
 (def ^:const DESC-WAMP-ERROR-NOAUTH   "unauthorized")
 (def ^:const URI-WAMP-ERROR-NOAUTH    (str URI-WAMP-ERROR "unauthorized"))
-
-(def project-version "clj-wamp/1.0.2")
 
 (def max-sess-id (atom 0))
 
