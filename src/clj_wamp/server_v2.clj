@@ -424,7 +424,7 @@
 
 ;; WAMP PubSub/RPC callbacks
 
-(defn- on-invocation
+(defn- on-call
   "Handle WAMP call (RPC) messages"
   [callbacks sess-id topic call-id call-opts call-params call-kw-params]
   (if-let [rpc-cb (callbacks topic)]
@@ -438,10 +438,10 @@
             result     (:result rpc-result)]
         (if (and (nil? error) (nil? result))
           ; No map with result or error? Assume successful rpc-result as-is
-          (invocation-success sess-id topic call-id rpc-result (callbacks :on-after-success))
+          (call-success sess-id topic call-id rpc-result (callbacks :on-after-success))
           (if (nil? error)
-            (invocation-success sess-id topic call-id result (callbacks :on-after-success))
-            (invocation-error   sess-id topic call-id error  (callbacks :on-after-error)))))
+            (call-success sess-id topic call-id result (callbacks :on-after-success))
+            (call-error   sess-id topic call-id error  (callbacks :on-after-error)))))
       (catch Exception e
         (call-error sess-id topic call-id
           {:uri (wamp-error-uri :internal-error)
@@ -507,7 +507,7 @@
   [uri]
   (hash uri))
 
-(defn- call->invocation
+(defn- call->call
   [arguments]
   [(message-id :INVOCATION)
    (nth arguments 1) ; request id
@@ -518,7 +518,7 @@
 
 (defn- handle-message
   [sess-id callbacks data-seq]
-  (let [[msg-type & msg-params] arguments 
+  (let [[msg-type & msg-params] data-seq
         on-call-cbs  (callbacks :on-call)
         on-sub-cbs   (callbacks :on-subscribe)
         on-unsub-cb  (callbacks :on-unsubscribe)
@@ -542,8 +542,8 @@
                   ;(= URI-WAMP-CALL-AUTHREQ topic)
                   ;(= URI-WAMP-CALL-AUTH topic)
                   (authorized? sess-id :rpc topic perm-cb))
-            (on-invocation on-call-cbs sess-id topic call-id call-opts call-params call-kw-params)
-            (invocation-error sess-id topic call-id
+            (on-call on-call-cbs sess-id topic call-id call-opts call-params call-kw-params)
+            (call-error sess-id topic call-id
                               {:uri (wamp-error-uri :not-authorized) :message "Access denied"}
                               (on-call-cbs :on-after-error)))))
 
@@ -562,8 +562,8 @@
                     (= URI-WAMP-CALL-AUTHREQ topic)
                     (= URI-WAMP-CALL-AUTH topic)
                     (authorized? sess-id :rpc topic perm-cb))
-              (apply on-invocation on-call-cbs sess-id topic call-id call-params)
-              (invocation-error sess-id topic call-id
+              (apply on-call on-call-cbs sess-id topic call-id call-params)
+              (call-error sess-id topic call-id
                           {:uri URI-WAMP-ERROR-NOAUTH :message DESC-WAMP-ERROR-NOAUTH}
                           (on-call-cbs :on-after-error)))))
 
@@ -586,7 +586,7 @@
             (apply on-publish on-pub-cbs sess-id topic event pub-args))))
 
       ; default: Unknown message type
-      (log/warn "Unknown message type" arguments))))
+      (log/warn "Unknown message type" data-seq))))
 
 #_(defn http-kit-handler
   "Sets up the necessary http-kit websocket event handlers

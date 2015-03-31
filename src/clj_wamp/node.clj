@@ -5,25 +5,28 @@
     [clojure.tools.logging :as log]
     [cheshire.core :as json]
     [gniazdo.core :as ws]
-    [clj-wamp.v2 :as wamp]))
+    [clj-wamp.v2 :as wamp])
+  (:import
+    [org.eclipse.jetty.websocket.client WebSocketClient]))
 
 (defn- handle-connect
-  [instance session]
+  [{:keys [registrations on-call] :as instance} session]
   (log/debug "Connected to WAMP router with session" session)
-  (ws/send-msg @(:socket instance)
-               (wamp/hello instance)))
+  (reset! registrations [on-call {} {}]))
 
 (defn- handle-message
   [instance msg-str]
   (let [msg-data (try (json/decode msg-str)
                       (catch com.fasterxml.jackson.core.JsonParseException ex
                         [nil nil]))]
-    (wamp/handle-message msg-data)))
+    (log/debug "Handling message" msg-str)
+    (wamp/handle-message instance msg-data)))
 
 (declare connect)
 
 (defn- handle-close
   [instance code reason]
+  (log/debug "Disconnected from WAMP router:" code reason)
   (reset! (:socket instance) nil)
   (when @(:reconnect-state instance)
     (connect instance)))
@@ -33,6 +36,7 @@
   (log/error ex "WAMP router error"))
 
 (defn connect [instance]
+  (log/debug "Connecting clj-wamp node")
   (reset! (:reconnect-state instance) (:reconnect? instance))
   (swap! (:socket instance)
          (fn [socket]
@@ -47,6 +51,8 @@
                             :on-close (partial handle-close instance)
                             :on-error (partial handle-error instance))]
                socket))))
+  (log/debug "Sending HELLO")
+  (wamp/hello instance)
   instance)
 
 (defn disconnect [instance]
@@ -60,10 +66,12 @@
 (defn create [{:keys [router-uri realm on-call] :as conf}]
   {:pre [(string? router-uri)
          (string? realm)]}
-  (merge 
-    {:reconnect? true}
-    conf
-    {:client (ws/client (java.net.URI. router-uri))
-     :socket (atom nil)
-     :reconnect-state (atom false)
-     :registrations (atom [on-call {} {}])}))
+  (let [client (ws/client (java.net.URI. router-uri))]
+    (.start ^WebSocketClient client)
+    (merge 
+      {:reconnect? true}
+      conf
+      {:client client
+       :socket (atom nil)
+       :reconnect-state (atom false)
+       :registrations (atom nil)})))

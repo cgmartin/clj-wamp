@@ -37,6 +37,15 @@
   [msg-keyword]
   (get message-id-table msg-keyword))
 
+(defn invert-map 
+  [dict]
+  (into {} (map (fn [[k v]] [v k]) dict)))
+
+(def reverse-message-id-table (invert-map message-id-table))
+
+(defn reverse-message-id [msg-num]
+  (get reverse-message-id-table msg-num))
+
 ; Predefined URIs
 (def ^:const wamp-error-uri-table
   {:invalid-uri "wamp.error.invalid_uri"
@@ -67,8 +76,10 @@
 
 (defn send!
   [instance msg-data]
-  (when-let [socket @(:socket instance)]
-   (ws/send-msg socket (json/encode msg-data))))
+  (let [json-str (json/encode msg-data)]
+    (log/debug "Sending message" json-str)
+    (when-let [socket @(:socket instance)]
+      (ws/send-msg socket json-str))))
 
 (defn hello
   "[HELLO, Realm|uri, Details|dict]"
@@ -109,8 +120,8 @@
    [YIELD, INVOCATION.Request|id, Options|dict, Arguments|list, ArgumentsKw|dict]"
   [instance request-id options seq-args kw-args]
   (let [args [(message-id :YIELD) request-id options]
-        args (if (some? seq-args) (conj args seq-args))
-        args (if (some? kw-args) (conj args kw-args))]
+        args (if (some? seq-args) (conj args seq-args) args)
+        args (if (some? kw-args) (conj args kw-args) args)]
   (send! instance args)))
 
 (defn register-next!
@@ -118,11 +129,10 @@
   (swap! (:registrations instance)
          (fn [[unregistered registered pending]]
            (if-let [[reg-uri reg-fn] (first unregistered)]
-             (let [reg-id (core/new-rand-id)
-                   req-id (core/new-rand-id)]
-               (register instance reg-id req-id {} reg-uri)
-               [(dissoc unregistered reg-uri) registered (assoc pending req-id [reg-id reg-fn])]
-             [unregistered registered pending])))))
+             (let [req-id (core/new-rand-id)]
+               (register instance req-id {} reg-uri)
+               [(dissoc unregistered reg-uri) registered (assoc pending req-id reg-fn)])
+             [unregistered registered pending]))))
 
 (defn perform-invocation
   [instance req-id rpc-fn options seq-args kw-args]
@@ -134,14 +144,15 @@
         (cond
           (:result return) (yield instance req-id {} [(:result return)] nil)
           (:list-result return) (yield instance req-id {} (vec (:list-result return)) nil)
-          (:map-result return) (yield instance req-id {} [] (:map-result return)))))
+          (:map-result return) (yield instance req-id {} [] (:map-result return))
+          :else (yield instance req-id {} [return] nil))))
     (catch Throwable e
       (error instance (message-id :INVOCATION) req-id {:message (.getMessage e)
                                                        :stacktrace (map str (.getStackTrace e))}))))
 
-(defmulti handle-message (fn [instance data] (first data)))
+(defmulti handle-message (fn [instance data] (reverse-message-id (first data))))
 
-(defmethod handle-message :default
+(defmethod handle-message nil
   [instance data]
   (error instance 0 0 {:message "Invalid message type"} (error-uri :bad-request)))
 
@@ -174,7 +185,8 @@
   (swap! (:registrations instance)
          (fn [[unregistered registered pending]]
            (let [req-id (nth data 1)
-                 [reg-id reg-fn] (get pending req-id)]
+                 reg-id (nth data 2)
+                 reg-fn (get pending req-id)]
              [unregistered (assoc registered reg-id reg-fn) (dissoc pending req-id)])))
   (register-next! instance))
 
@@ -188,7 +200,7 @@
         reg-id (nth data 2)
         reg-fn (get registered reg-id)]
     (if (some? reg-fn)
-      (perform-invocation instance req-id reg-fn (nth data 3) (nth data 4) (nth data 5))
+      (perform-invocation instance req-id reg-fn (nth data 3) (nth data 4 []) (nth data 5 nil))
       (error instance (message-id :INVOCATION) req-id 
              {:message "Unregistered RPC"
               :reg-id reg-id}
