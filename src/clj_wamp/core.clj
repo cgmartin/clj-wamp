@@ -12,7 +12,7 @@
 (def ^:private rand-gen (Random.))
 (def ^:private sess-id-max 9007199254740992) ; 2^53 per WAMP spec
 
-(defn- new-sess-id []
+(defn new-rand-id []
   (mod (.nextLong rand-gen) sess-id-max))
 
 ;; Client utils
@@ -25,7 +25,7 @@
   "Adds a websocket channel (or callback function) to a map of clients
   and returns a unique session id."
   [channel-or-fn]
-  (let [sess-id (new-sess-id)]
+  (let [sess-id (new-rand-id)]
     (dosync (alter client-channels assoc sess-id channel-or-fn))
     sess-id))
 
