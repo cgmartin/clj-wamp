@@ -78,7 +78,7 @@
   [{:keys [debug?] :as instance} msg-data]
   (let [json-str (json/encode msg-data)]
     (when debug?
-      (log/debug "Sending message" json-str))
+      (log/debug "Sending WAMP message" json-str))
     (when-let [socket @(:socket instance)]
       (ws/send-msg socket json-str))))
 

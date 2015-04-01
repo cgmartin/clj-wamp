@@ -25,7 +25,7 @@
       (log/debug "WAMP message received:" msg-str))
     (wamp/handle-message instance msg-data)))
 
-(declare connect)
+(declare connect!)
 
 (defn- handle-close
   [{:keys [debug?] :as instance} code reason]
@@ -33,7 +33,7 @@
     (log/debug "Disconnected from WAMP router:" code reason))
   (reset! (:socket instance) nil)
   (when @(:reconnect-state instance)
-    (connect instance)))
+    (connect! instance)))
 
 (defn- handle-error
   [instance ex]
