@@ -89,7 +89,7 @@
           (:realm instance)
           {:roles
            {:callee {}
-            #_:publisher #_{}}}]))
+            :publisher {}}}]))
 
 (defn abort
   "[ABORT, Details|dict, Reason|uri]"
@@ -109,6 +109,16 @@
   (send! instance
          [(message-id :ERROR) request-type request-id details uri]))
 
+(defn publish
+  "[PUBLISH, Request|id, Options|dict, Topic|uri]
+   [PUBLISH, Request|id, Options|dict, Topic|uri, Arguments|list]
+   [PUBLISH, Request|id, Options|dict, Topic|uri, Arguments|list, ArgumentsKw|dict]"
+  [instance request-id options uri seq-args kw-args]
+  (let [args [(message-id :PUBLISH) request-id options uri]
+        args (if (some? seq-args) (conj args seq-args) args)
+        args (if (some? kw-args) (conj args kw-args) args)]
+  (send! instance args)))
+
 (defn register
   "[REGISTER, Request|id, Options|dict, Procedure|uri]"
   [instance request-id options uri]
@@ -124,7 +134,7 @@
         args (if (some? kw-args) (conj args kw-args) args)]
   (send! instance args)))
 
-(defn register-next!
+(defn- register-next!
   [instance]
   (swap! (:registrations instance)
          (fn [[unregistered registered pending]]
@@ -134,10 +144,21 @@
                [(dissoc unregistered reg-uri) registered (assoc pending req-id [reg-uri reg-fn])])
              [unregistered registered pending]))))
 
+(defn- exception-message
+  [{:keys [debug?] :as instance} ex]
+  (if debug?
+    {:message (.getMessage ex)
+     :stacktrace (map str (.getStackTrace ex))}
+    {:message "Application error"}))
+
 (defn perform-invocation
   [instance req-id rpc-fn options seq-args kw-args]
   (try 
-    (let [return (apply rpc-fn seq-args)]
+    (let [return (if (some? kw-args)
+                   (rpc-fn kw-args)
+                   (if (some? seq-args)
+                     (apply rpc-fn seq-args)
+                     (rpc-fn)))]
       (if-let [return-error (:error return)]
         (let [return-error-uri (if (:uri return-error) (:uri return-error) (error-uri :application-error))]
           (error instance (message-id :INVOCATION) req-id (dissoc return-error :uri) return-error-uri))
@@ -147,13 +168,18 @@
           (:map-result return) (yield instance req-id {} [] (:map-result return))
           :else (yield instance req-id {} [return] nil))))
     (catch Throwable e
-      (error instance (message-id :INVOCATION) req-id {:message (.getMessage e)
-                                                       :stacktrace (map str (.getStackTrace e))}))))
+      (error instance (message-id :INVOCATION) req-id (exception-message instance e)))))
 
 (defmulti handle-error (fn [instance data] (reverse-message-id (second data))))
 
 (defmethod handle-error nil
   [instance data]
+  nil)
+
+(defmethod handle-error :PUBLISH
+  [instance data]
+  "[ERROR, PUBLISH, PUBLISH.Request|id, Details|dict, Error|uri]"
+  (log/error "Router failed to publish event" data)
   nil)
 
 (defmethod handle-error :REGISTER
@@ -196,6 +222,10 @@
    [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list, ArgumentsKw|dict]" 
   (log/error "Error received from router" data)
   (handle-error instance data))
+
+(defmethod handle-message :PUBLISHED
+  [instance data]
+  nil)
 
 (defmethod handle-message :REGISTERED
   [instance data]

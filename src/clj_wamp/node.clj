@@ -1,10 +1,11 @@
 (ns ^{:author "Ryan Sundberg"
-      :doc "WAMP V2 server node"}
+      :doc "WAMP V2 application node"}
   clj-wamp.node
   (:require
     [clojure.tools.logging :as log]
     [cheshire.core :as json]
     [gniazdo.core :as ws]
+    [clj-wamp.core :as core]
     [clj-wamp.v2 :as wamp])
   (:import
     [org.eclipse.jetty.websocket.client WebSocketClient]))
@@ -35,7 +36,16 @@
   [instance ex]
   (log/error ex "WAMP router error"))
 
-(defn connect [instance]
+(defn publish!
+  "Publish an event"
+  ([instance event-uri]
+   (publish! instance event-uri nil))
+  ([instance event-uri seq-args]
+   (publish! instance event-uri seq-args nil))
+  ([instance event-uri seq-args kw-args]
+   (wamp/publish instance (core/new-rand-id) {} event-uri seq-args kw-args)))
+
+(defn connect! [instance]
   (log/debug "Connecting clj-wamp node")
   (reset! (:reconnect-state instance) (:reconnect? instance))
   (swap! (:socket instance)
@@ -55,7 +65,7 @@
   (wamp/hello instance)
   instance)
 
-(defn disconnect [instance]
+(defn disconnect! [instance]
   (reset! (:reconnect-state instance) false)  
   (swap! (:socket instance)
          (fn [socket]
@@ -69,7 +79,8 @@
   (let [client (ws/client (java.net.URI. router-uri))]
     (.start ^WebSocketClient client)
     (merge 
-      {:reconnect? true}
+      {:reconnect? true
+       :debug? false}
       conf
       {:client client
        :socket (atom nil)
