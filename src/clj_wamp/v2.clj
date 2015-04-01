@@ -131,7 +131,7 @@
            (if-let [[reg-uri reg-fn] (first unregistered)]
              (let [req-id (core/new-rand-id)]
                (register instance req-id {} reg-uri)
-               [(dissoc unregistered reg-uri) registered (assoc pending req-id reg-fn)])
+               [(dissoc unregistered reg-uri) registered (assoc pending req-id [reg-uri reg-fn])])
              [unregistered registered pending]))))
 
 (defn perform-invocation
@@ -149,6 +149,23 @@
     (catch Throwable e
       (error instance (message-id :INVOCATION) req-id {:message (.getMessage e)
                                                        :stacktrace (map str (.getStackTrace e))}))))
+
+(defmulti handle-error (fn [instance data] (reverse-message-id (second data))))
+
+(defmethod handle-error nil
+  [instance data]
+  nil)
+
+(defmethod handle-error :REGISTER
+  [instance data]
+  "[ERROR, REGISTER, REGISTER.Request|id, Details|dict, Error|uri]"
+  (swap! (:registrations instance)
+         (fn [[unregistered registered pending]]
+           (let [req-id (nth data 2)
+                 [reg-uri reg-fn] (get pending req-id)]
+             (log/error "Failed to register RPC method:" reg-uri)
+             [(assoc unregistered reg-uri reg-fn) registered (dissoc pending req-id)])))
+  nil)
 
 (defmulti handle-message (fn [instance data] (reverse-message-id (first data))))
 
@@ -177,7 +194,8 @@
   "[ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri]
    [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list]
    [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list, ArgumentsKw|dict]" 
-  (log/error "Error received from router" data))
+  (log/error "Error received from router" data)
+  (handle-error instance data))
 
 (defmethod handle-message :REGISTERED
   [instance data]
@@ -186,7 +204,7 @@
          (fn [[unregistered registered pending]]
            (let [req-id (nth data 1)
                  reg-id (nth data 2)
-                 reg-fn (get pending req-id)]
+                 [reg-uri reg-fn] (get pending req-id)]
              [unregistered (assoc registered reg-id reg-fn) (dissoc pending req-id)])))
   (register-next! instance))
 
