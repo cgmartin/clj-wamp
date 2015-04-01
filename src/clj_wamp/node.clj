@@ -48,25 +48,39 @@
   ([instance event-uri seq-args kw-args]
    (wamp/publish instance (core/new-rand-id) {} event-uri seq-args kw-args)))
 
-(defn connect! [{:keys [debug? router-uri] :as instance}]
-  (reset! (:reconnect-state instance) (:reconnect? instance))
-  (swap! (:socket instance)
-         (fn [socket]
-           (when (nil? socket)
-             (when debug?
-               (log/debug "Connecting to WAMP router at" router-uri))
-             (let [socket (ws/connect
-                            router-uri
-                            :client (:client instance)
-                            :headers {}
-                            :subprotocols [wamp/subprotocol-id]
-                            :on-connect (partial handle-connect instance)
-                            :on-receive (partial handle-message instance)
-                            :on-close (partial handle-close instance)
-                            :on-error (partial handle-error instance))]
-               socket))))
-  (wamp/hello instance)
-  instance)
+(defn- try-connect [{:keys [debug? router-uri] :as instance}]
+  (try 
+    (swap! (:socket instance)
+           (fn [socket]
+             (when (nil? socket)
+               (when debug?
+                 (log/debug "Connecting to WAMP router at" router-uri))
+               (let [socket (ws/connect
+                              router-uri
+                              :client (:client instance)
+                              :headers {}
+                              :subprotocols [wamp/subprotocol-id]
+                              :on-connect (partial handle-connect instance)
+                              :on-receive (partial handle-message instance)
+                              :on-close (partial handle-close instance)
+                              :on-error (partial handle-error instance))]
+                 socket))))
+    (wamp/hello instance)
+    true
+    (catch Exception e
+      (log/error e "Failed to connect to WAMP router")
+      false)))
+
+(defn connect! [{:keys [reconnect-state reconnect? reconnect-wait-ms] :as instance}]
+  (reset! reconnect-state reconnect?)
+  (let [connected? (try-connect instance)]
+    (if connected?
+      instance
+      (if @reconnect-state
+        (do
+          (Thread/sleep reconnect-wait-ms)
+          (recur instance))
+        instance))))
 
 (defn disconnect! [{:keys [debug?] :as instance}]
   (reset! (:reconnect-state instance) false)  
@@ -84,8 +98,9 @@
   (let [client (ws/client (java.net.URI. router-uri))]
     (.start ^WebSocketClient client)
     (merge 
-      {:reconnect? true
-       :debug? false}
+      {:debug? false
+       :reconnect? true
+       :reconnect-wait-ms 10000}
       conf
       {:client client
        :socket (atom nil)
