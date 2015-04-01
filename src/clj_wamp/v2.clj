@@ -75,9 +75,10 @@
   (core/new-rand-id))
 
 (defn send!
-  [instance msg-data]
+  [{:keys [debug?] :as instance} msg-data]
   (let [json-str (json/encode msg-data)]
-    (log/debug "Sending message" json-str)
+    (when debug?
+      (log/debug "Sending message" json-str))
     (when-let [socket @(:socket instance)]
       (ws/send-msg socket json-str))))
 
@@ -174,6 +175,7 @@
 
 (defmethod handle-error nil
   [instance data]
+  (log/error "Error received from router" data)
   nil)
 
 (defmethod handle-error :PUBLISH
@@ -220,7 +222,6 @@
   "[ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri]
    [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list]
    [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list, ArgumentsKw|dict]" 
-  (log/error "Error received from router" data)
   (handle-error instance data))
 
 (defmethod handle-message :PUBLISHED

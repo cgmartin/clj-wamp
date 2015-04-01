@@ -11,30 +11,33 @@
     [org.eclipse.jetty.websocket.client WebSocketClient]))
 
 (defn- handle-connect
-  [{:keys [registrations on-call] :as instance} session]
-  (log/debug "Connected to WAMP router with session" session)
+  [{:keys [debug? registrations on-call] :as instance} session]
+  (when debug?
+    (log/debug "Connected to WAMP router with session" session))
   (reset! registrations [on-call {} {}]))
 
 (defn- handle-message
-  [instance msg-str]
+  [{:keys [debug?] :as instance} msg-str]
   (let [msg-data (try (json/decode msg-str)
                       (catch com.fasterxml.jackson.core.JsonParseException ex
                         [nil nil]))]
-    (log/debug "Handling message" msg-str)
+    (when debug?
+      (log/debug "WAMP message received:" msg-str))
     (wamp/handle-message instance msg-data)))
 
 (declare connect)
 
 (defn- handle-close
-  [instance code reason]
-  (log/debug "Disconnected from WAMP router:" code reason)
+  [{:keys [debug?] :as instance} code reason]
+  (when debug?
+    (log/debug "Disconnected from WAMP router:" code reason))
   (reset! (:socket instance) nil)
   (when @(:reconnect-state instance)
     (connect instance)))
 
 (defn- handle-error
   [instance ex]
-  (log/error ex "WAMP router error"))
+  (log/error ex "WAMP socket error"))
 
 (defn publish!
   "Publish an event"
@@ -45,14 +48,15 @@
   ([instance event-uri seq-args kw-args]
    (wamp/publish instance (core/new-rand-id) {} event-uri seq-args kw-args)))
 
-(defn connect! [instance]
-  (log/debug "Connecting clj-wamp node")
+(defn connect! [{:keys [debug? router-uri] :as instance}]
   (reset! (:reconnect-state instance) (:reconnect? instance))
   (swap! (:socket instance)
          (fn [socket]
            (when (nil? socket)
+             (when debug?
+               (log/debug "Connecting to WAMP router at" router-uri))
              (let [socket (ws/connect
-                            (:router-uri instance)
+                            router-uri
                             :client (:client instance)
                             :headers {}
                             :subprotocols [wamp/subprotocol-id]
@@ -61,15 +65,16 @@
                             :on-close (partial handle-close instance)
                             :on-error (partial handle-error instance))]
                socket))))
-  (log/debug "Sending HELLO")
   (wamp/hello instance)
   instance)
 
-(defn disconnect! [instance]
+(defn disconnect! [{:keys [debug?] :as instance}]
   (reset! (:reconnect-state instance) false)  
   (swap! (:socket instance)
          (fn [socket]
            (when (some? socket)
+             (when debug?
+               (log/debug "Disconnecting from WAMP router"))
              (ws/close socket)
              nil))))
 
