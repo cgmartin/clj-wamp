@@ -399,7 +399,7 @@
          (msg-received? nil)
 
          ; Test close
-         (dosync (is (some? (get @client-channels sess-id))))
+         (dosync (is (not (nil? (get @client-channels sess-id)))))
          (@close "close-status")
          (is (ws-closed? sess-id "close-status"))
          (dosync (is (nil? (get @client-channels sess-id))))
