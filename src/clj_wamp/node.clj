@@ -48,6 +48,11 @@
   ([instance event-uri seq-args kw-args]
    (wamp/publish instance (core/new-rand-id) {} event-uri seq-args kw-args)))
 
+(defn publish-to!
+  "Publish an event to specific session ids"
+  [instance session-ids event-uri seq-args kw-args]
+  (wamp/publish instance (core/new-rand-id) {:eligible session-ids} event-uri seq-args kw-args))
+
 (defn- try-connect [{:keys [debug? router-uri] :as instance}]
   (try 
     (swap! (:socket instance)

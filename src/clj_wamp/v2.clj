@@ -90,7 +90,9 @@
           (:realm instance)
           {:roles
            {:callee {}
-            :publisher {}}}]))
+            :publisher
+            {:features
+             {:subscriber_blackwhite_listing true}}}}]))
 
 (defn abort
   "[ABORT, Details|dict, Reason|uri]"
