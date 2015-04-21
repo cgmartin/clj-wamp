@@ -155,20 +155,19 @@
     {:message "Application error"}))
 
 (defn perform-invocation
-  [instance req-id rpc-fn options seq-args kw-args]
+  [instance req-id rpc-fn options seq-args map-args]
   (try 
-    (let [return (if (some? kw-args)
-                   (rpc-fn kw-args)
-                   (if (some? seq-args)
-                     (apply rpc-fn seq-args)
-                     (rpc-fn)))]
+    (let [return (rpc-fn {:call-id req-id
+                          :options options
+                          :seq-args seq-args
+                          :map-args map-args})]
       (if-let [return-error (:error return)]
         (let [return-error-uri (if (:uri return-error) (:uri return-error) (error-uri :application-error))]
           (error instance (message-id :INVOCATION) req-id (dissoc return-error :uri) return-error-uri))
         (cond
-          (:result return) (yield instance req-id {} [(:result return)] nil)
-          (:list-result return) (yield instance req-id {} (vec (:list-result return)) nil)
-          (:map-result return) (yield instance req-id {} [] (:map-result return))
+          (:result return) (yield instance req-id (merge {} (:options return)) [(:result return)] nil)
+          (:seq-result return) (yield instance req-id (merge {} (:options return)) (vec (:seq-result return)) nil)
+          (:map-result return) (yield instance req-id (merge {} (:options return)) [] (:map-result return))
           :else (yield instance req-id {} [return] nil))))
     (catch Throwable e
       (error instance (message-id :INVOCATION) req-id (exception-message instance e)))))
