@@ -1,5 +1,6 @@
 (ns clj-wamp.v2
   (:require
+    [clojure.core.async :as async]
     [clojure.tools.logging :as log]
     [cheshire.core :as json]
     [gniazdo.core :as ws]
@@ -154,21 +155,35 @@
      :stacktrace (map str (.getStackTrace ex))}
     {:message "Application error"}))
 
-(defn perform-invocation
+(declare yield-progressive)
+
+(defn- yield-return
+  [instance req-id return]
+  (if-let [return-error (:error return)]
+    (let [return-error-uri (if (:uri return-error) (:uri return-error) (error-uri :application-error))]
+      (error instance (message-id :INVOCATION) req-id (dissoc return-error :uri) return-error-uri))
+    (cond
+      (:result return) (yield instance req-id (merge {} (:options return)) [(:result return)] nil)
+      (:seq-result return) (yield instance req-id (merge {} (:options return)) (vec (:seq-result return)) nil)
+      (:map-result return) (yield instance req-id (merge {} (:options return)) [] (:map-result return))
+      (:chan-result return) (yield-progressive instance req-id return)
+      :else (yield instance req-id {} [return] nil))))
+
+(defn- yield-progressive
+  [instance req-id return-chan]
+  (async/go-loop []
+    (when-let [return (async/<! return-chan)]
+      (yield-return instance req-id return)
+      (recur))))
+
+(defn- perform-invocation
   [instance req-id rpc-fn options seq-args map-args]
   (try 
     (let [return (rpc-fn {:call-id req-id
                           :options options
                           :seq-args seq-args
                           :map-args map-args})]
-      (if-let [return-error (:error return)]
-        (let [return-error-uri (if (:uri return-error) (:uri return-error) (error-uri :application-error))]
-          (error instance (message-id :INVOCATION) req-id (dissoc return-error :uri) return-error-uri))
-        (cond
-          (:result return) (yield instance req-id (merge {} (:options return)) [(:result return)] nil)
-          (:seq-result return) (yield instance req-id (merge {} (:options return)) (vec (:seq-result return)) nil)
-          (:map-result return) (yield instance req-id (merge {} (:options return)) [] (:map-result return))
-          :else (yield instance req-id {} [return] nil))))
+      (yield-return instance req-id return))
     (catch Throwable e
       (error instance (message-id :INVOCATION) req-id (exception-message instance e)))))
 
