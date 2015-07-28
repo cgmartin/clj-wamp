@@ -166,7 +166,7 @@
       (:result return) (yield instance req-id (merge {} (:options return)) [(:result return)] nil)
       (:seq-result return) (yield instance req-id (merge {} (:options return)) (vec (:seq-result return)) nil)
       (:map-result return) (yield instance req-id (merge {} (:options return)) [] (:map-result return))
-      (:chan-result return) (yield-progressive instance req-id return)
+      (:chan-result return) (yield-progressive instance req-id (:chan-result return))
       :else (yield instance req-id {} [return] nil))))
 
 (defn- yield-progressive
