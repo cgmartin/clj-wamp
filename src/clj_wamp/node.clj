@@ -14,6 +14,7 @@
   [{:keys [debug? registrations on-call] :as instance} session]
   (when debug?
     (log/debug "Connected to WAMP router with session" session))
+  ; there might be a race condition here if we get a "welcome" message before the connect event
   (reset! registrations [on-call {} {}]))
 
 (defn- handle-message
